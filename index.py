@@ -1,15 +1,11 @@
-import requests, json
-import os
+import requests, json, subprocess, os
 from dotenv import load_dotenv
-
-from datetime import datetime, timedelta
-import urllib.parse
 
 load_dotenv()
 
 AIRTABLE_API_KEY = os.getenv('AIRTABLE_API_KEY')
 AIRTABLE_BASE_ID = os.getenv('AIRTABLE_BASE_ID')
-AIRTABLE_TABLE_ID = os.getenv('AIRTABLE_TABLE_NAME')
+AIRTABLE_TABLE_ID = os.getenv('AIRTABLE_TABLE_ID')
 AIRTABLE_VIEW_ID = os.getenv('AIRTABLE_VIEW_ID')
 
 baseUrl = 'https://api.airtable.com/v0'
@@ -57,14 +53,36 @@ def downloadVideo(videoUrl, folderName, recordId):
     print(f"Video: {fileName} downloaded")
     return fileName
 
+
+def processVideo(downloadedVideos, processedVideos, fileName, processingSpecs):
+    ffmpegCommand = [
+        'ffmpeg',
+        '-i', f"{downloadedVideos}/{fileName}",
+        '-vf', f'rotate={processingSpecs["rotationAngle"]}*PI/180',
+        '-metadata:s:v:0', f'rotate={processingSpecs["rotationAngle"]}',
+        '-codec:a', 'copy',
+        f"{processedVideos}/{fileName}",
+    ]
+    
+    subprocess.run(ffmpegCommand, check=True)
+    print(f"{processedVideos}/{fileName} processed and saved")
+
+
 if __name__ == '__main__':
-    folderName = "videos"
+    downloadedVideos = "DownloadedVideos"
+    processedVideos = "ProcessedVideos"
+
     currentDirectory = os.getcwd()
-    folderPath = os.path.join(currentDirectory, folderName)
+
+    folderPath = os.path.join(currentDirectory, downloadedVideos)
     if not os.path.exists(folderPath):
         os.makedirs(folderPath)
-        print(f"Folder '{folderName}' created.")
+        print(f"Folder '{downloadedVideos}' created.")
 
+    folderPath = os.path.join(currentDirectory, processedVideos)
+    if not os.path.exists(folderPath):
+        os.makedirs(folderPath)
+        print(f"Folder '{processedVideos}' created.")
 
     offset = None
     firstRequest = True
@@ -76,10 +94,16 @@ if __name__ == '__main__':
 
         if records:
             print(f"Retrieved {len(records)} records from Airtable")
-            for record in records:
+            for record in records[:1]:
                 recordId = record["id"]
                 recordFields = record['fields']
-                fileName = downloadVideo(recordFields["Google Drive URL"], folderName, recordId)
+                fileName = downloadVideo(recordFields["Google Drive URL"], downloadedVideos, recordId)
+
+                processingSpecs = {
+                    "rotationAngle": 3
+                }
+
+                processVideo(downloadedVideos, processedVideos, fileName, processingSpecs)
         else:
             print("No records retrieved from AirTable")
         firstRequest = False

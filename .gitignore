@@ -1,2 +1,5 @@
 .env
-videos/
+Presets/
+SampleVideos/
+DownloadedVideos/
+ProcessedVideos/

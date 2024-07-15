@@ -1,4 +1,5 @@
-import requests, json, subprocess, os
+# import ffmpeg
+import requests, json, subprocess, os, math
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -54,7 +55,47 @@ def downloadVideo(videoUrl, folderName, recordId):
     return fileName
 
 
+def getVideoDimension(videPath):
+    cmd = [
+        'ffprobe',
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-count_packets',
+        '-show_entries', 'stream=width,height',
+        '-of', 'json',
+        videPath
+    ]
+    
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    if result.returncode != 0:
+        print("Error:", result.stderr)
+        return None
+    
+    data = json.loads(result.stdout)
+    
+    if 'streams' in data and len(data['streams']) > 0:
+        stream = data['streams'][0]
+        width = stream.get('width')
+        height = stream.get('height')
+        return {"width": width, "height": height}
+    else:
+        return None
+
+
 def processVideo(downloadedVideos, processedVideos, fileName, processingSpecs):
+
+    # Find the distance which needs to be cropped
+    videoDimensions = getVideoDimension(f"{downloadedVideos}/{fileName}")
+
+    x = videoDimensions["width"] / 2
+    y = videoDimensions["height"] / 2
+
+    rotatedX = videoDimensions["width"] / 2 * math.cos(processingSpecs["rotationAngle"]) + videoDimensions["height"] / 2 * math.sin(processingSpecs["rotationAngle"])
+    rotatedY = videoDimensions["width"] / 2 * math.sin(processingSpecs["rotationAngle"]) - videoDimensions["height"] / 2 * math.cos(processingSpecs["rotationAngle"])
+
+    # Find the distance from x axis and y axis
+
     ffmpegCommand = [
         'ffmpeg',
         '-i', f"{downloadedVideos}/{fileName}",
@@ -65,6 +106,7 @@ def processVideo(downloadedVideos, processedVideos, fileName, processingSpecs):
     ]
     
     subprocess.run(ffmpegCommand, check=True)
+
     print(f"{processedVideos}/{fileName} processed and saved")
 
 

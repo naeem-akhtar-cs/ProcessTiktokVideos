@@ -55,6 +55,28 @@ def downloadVideo(videoUrl, folderName, recordId):
     return fileName
 
 
+def checkDir(folderName):
+    currentDirectory = os.getcwd()
+    folderPath = os.path.join(currentDirectory, folderName)
+    if not os.path.exists(folderPath):
+        os.makedirs(folderPath)
+        print(f"Folder '{downloadedVideos}' created.")
+
+
+def removeFiles(folderName):
+    currentDirectory = os.getcwd()
+    folderPath = os.path.join(currentDirectory, folderName)
+    for fileName in os.listdir(folderPath):
+        filePath = os.path.join(folderPath, fileName)
+        try:
+            if os.path.isfile(filePath) or os.path.islink(filePath):
+                os.unlink(filePath)
+            elif os.path.isdir(filePath):
+                shutil.rmtree(filePath)
+        except Exception as e:
+            print(f'Failed to delete {filePath}. Reason: {e}')
+
+
 def getVideoDimension(videPath):
     cmd = [
         'ffprobe',
@@ -83,18 +105,35 @@ def getVideoDimension(videPath):
         return None
 
 
-def processVideo(downloadedVideos, processedVideos, fileName, processingSpecs):
+def processVideo(downloadedVideos, rotatedVideos, croppedVideos, resizedVideos, fileName, processingSpecs):
 
-    # Find the distance which needs to be cropped
     videoDimensions = getVideoDimension(f"{downloadedVideos}/{fileName}")
 
-    x = videoDimensions["width"] / 2
-    y = videoDimensions["height"] / 2
+    angleRadians = math.radians(processingSpecs["rotationAngle"])
+    
+    sinTheta = math.sin(angleRadians)
+    cosTheta = math.cos(angleRadians)
+    
+    newWidth = abs(videoDimensions["width"] * cosTheta) + abs(videoDimensions["height"] * sinTheta)
+    newHeight = abs(videoDimensions["width"] * sinTheta) + abs(videoDimensions["height"] * cosTheta)
 
-    rotatedX = videoDimensions["width"] / 2 * math.cos(processingSpecs["rotationAngle"]) + videoDimensions["height"] / 2 * math.sin(processingSpecs["rotationAngle"])
-    rotatedY = videoDimensions["width"] / 2 * math.sin(processingSpecs["rotationAngle"]) - videoDimensions["height"] / 2 * math.cos(processingSpecs["rotationAngle"])
+    updateDimensions = {
+        "width": int(newWidth),
+        "height": int(newHeight)
+    }
 
-    # Find the distance from x axis and y axis
+    heightDiff = updateDimensions["height"] - videoDimensions["height"]
+    widthDiff = updateDimensions["width"] - videoDimensions["width"]
+
+    dimensionsDiff = {
+        "width": heightDiff * 2,
+        "height": widthDiff * 2
+    }
+
+    updateDimensions = {
+        "width": videoDimensions["width"] - dimensionsDiff["width"],
+        "height": videoDimensions["height"] - dimensionsDiff["height"],
+    }
 
     ffmpegCommand = [
         'ffmpeg',
@@ -102,29 +141,53 @@ def processVideo(downloadedVideos, processedVideos, fileName, processingSpecs):
         '-vf', f'rotate={processingSpecs["rotationAngle"]}*PI/180',
         '-metadata:s:v:0', f'rotate={processingSpecs["rotationAngle"]}',
         '-codec:a', 'copy',
-        f"{processedVideos}/{fileName}",
+        f"{rotatedVideos}/{fileName}",
     ]
     
     subprocess.run(ffmpegCommand, check=True)
 
-    print(f"{processedVideos}/{fileName} processed and saved")
+    ffmpegCommand = [
+        'ffmpeg',
+        '-i', f"{rotatedVideos}/{fileName}",
+        '-vf', f'crop={updateDimensions["width"]}:{updateDimensions["height"]}',
+        '-metadata:s:v:0', f'rotate={processingSpecs["rotationAngle"]}',
+        '-codec:a', 'copy',
+        f"{croppedVideos}/{fileName}",
+    ]
+    
+    subprocess.run(ffmpegCommand, check=True)
 
+    ffmpegCommand = [
+        'ffmpeg',
+        '-i', f"{croppedVideos}/{fileName}",
+        '-vf', f'crop={updateDimensions["width"]}:{updateDimensions["height"]}',
+        '-metadata:s:v:0', f'scale={videoDimensions["width"]}:{videoDimensions["height"]}',
+        '-codec:a', 'copy',
+        f"{resizedVideos}/{fileName}",
+    ]
+    
+    subprocess.run(ffmpegCommand, check=True)
+
+
+    print(f"{fileName} processed and saved")
 
 if __name__ == '__main__':
     downloadedVideos = "DownloadedVideos"
-    processedVideos = "ProcessedVideos"
+    rotatedVideos = "RotatedVideos"
+    croppedVideos = "CroppedVideos"
+    resizedVideos = "ResizedVideos"
 
-    currentDirectory = os.getcwd()
+    checkDir(downloadedVideos)
+    removeFiles(downloadedVideos)
 
-    folderPath = os.path.join(currentDirectory, downloadedVideos)
-    if not os.path.exists(folderPath):
-        os.makedirs(folderPath)
-        print(f"Folder '{downloadedVideos}' created.")
+    checkDir(rotatedVideos)
+    removeFiles(rotatedVideos)
+    
+    checkDir(croppedVideos)
+    removeFiles(croppedVideos)
 
-    folderPath = os.path.join(currentDirectory, processedVideos)
-    if not os.path.exists(folderPath):
-        os.makedirs(folderPath)
-        print(f"Folder '{processedVideos}' created.")
+    checkDir(resizedVideos)
+    removeFiles(resizedVideos)
 
     offset = None
     firstRequest = True
@@ -136,7 +199,7 @@ if __name__ == '__main__':
 
         if records:
             print(f"Retrieved {len(records)} records from Airtable")
-            for record in records[:1]:
+            for record in records[:2]:
                 recordId = record["id"]
                 recordFields = record['fields']
                 fileName = downloadVideo(recordFields["Google Drive URL"], downloadedVideos, recordId)
@@ -145,7 +208,9 @@ if __name__ == '__main__':
                     "rotationAngle": 3
                 }
 
-                processVideo(downloadedVideos, processedVideos, fileName, processingSpecs)
+                processVideo(downloadedVideos, rotatedVideos, croppedVideos, resizedVideos, fileName, processingSpecs)
+                print(getVideoDimension(f"{downloadedVideos}/{fileName}"))
+                print(getVideoDimension(f"{resizedVideos}/{fileName}"))
         else:
             print("No records retrieved from AirTable")
         firstRequest = False

@@ -1,4 +1,5 @@
-import requests, json, subprocess, os, math
+import requests, json, subprocess, os, math, random
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from google.oauth2 import service_account
@@ -15,6 +16,19 @@ GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 baseUrl = "https://api.airtable.com/v0"
 driveDownloadBaseUrl = "https://drive.google.com/uc?export=download&id="
+
+locations = {
+    "New York": "+40.7128-074.0060/",
+    "Chicago": "+41.8781-087.6298/",
+    "Miami": "+25.7617-080.1918/",
+    "Boston": "+42.3601-071.0589/",
+    "Denver": "+39.7392-104.9903/",
+    "San Francisco": "+37.7749-122.4194/",
+    "Washington, D.C.": "+38.9072-077.0369/",
+    "Houston": "+29.7604-095.3698/",
+    "Las Vegas": "+36.1699-115.1398/",
+    "San Jose": "+37.3382-121.8863/"
+}
 
 def getAirtableRecords(offset):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
@@ -137,10 +151,46 @@ def uploadToDrive(filePath, fileName):
     fileUrl = driveDownloadBaseUrl + file.get("id")
     return fileUrl
 
+def getVideoBitrate(filePath):
+    cmd = [
+        'ffprobe', 
+        '-v', 'quiet',
+        '-select_streams', 'v:0',
+        '-print_format', 'json',
+        '-show_entries', 'stream=bit_rate',
+        filePath
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    data = json.loads(result.stdout)
+    
+    return int(data['streams'][0]['bit_rate'])
+
 
 def processVideo(processedVideos, fileName, processingSpecs):
 
+    locationName, locationIso6709 = random.choice(list(locations.items()))
+
+    randomDate = datetime.now() - timedelta(hours=random.randint(0, 24))
+    dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
+
+    metadata = {
+        "make": "Apple",
+        "model": "iPhone 14 Pro",
+        "location": locationName,
+        "date": dateStr,
+        "creation_time": dateStr,
+        "com.apple.quicktime.make": "Apple",
+        "com.apple.quicktime.model": "iPhone 14 Pro",
+        "com.apple.quicktime.software": "17.4.1",
+        "com.apple.quicktime.creationdate": f"{dateStr}+0000",
+        "com.apple.quicktime.location.ISO6709": locationIso6709,
+        "com.apple.quicktime.location.accuracy.horizontal": "6297.954794"
+    }
+
     videoDimensions = getVideoDimension(f"{processedVideos}/{fileName}.mp4")
+    bitrate = getVideoBitrate(f"{processedVideos}/{fileName}.mp4")
+    bitrateKbps = f"{bitrate // 1000}k"
 
     angleRadians = math.radians(processingSpecs["rotationAngle"])
 
@@ -166,10 +216,17 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
         "-vf", f'rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
+        '-c:v', 'libx264',
+        '-b:v', bitrateKbps,
         "-c:a", "copy",
-        f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov",
     ]
-    subprocess.run(ffmpegCommand, check=True)
+
+    for key, value in metadata.items():
+        ffmpegCommand.extend(['-metadata', f'{key}={value}'])
+
+    ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov")
+
+    subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
 
     fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov", f"{fileName}_{processingSpecs['variantId']}.mov")
     return fileUrl

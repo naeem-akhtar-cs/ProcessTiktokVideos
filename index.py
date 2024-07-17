@@ -12,6 +12,8 @@ AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_TABLE_ID")
 AIRTABLE_VIEW_ID = os.getenv("AIRTABLE_VIEW_ID")
+AIRTABLE_TABLE_ID_DRIVE = os.getenv("AIRTABLE_TABLE_ID_DRIVE")
+
 GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 baseUrl = "https://api.airtable.com/v0"
@@ -27,7 +29,7 @@ locations = {
     "Washington, D.C.": "+38.9072-077.0369/",
     "Houston": "+29.7604-095.3698/",
     "Las Vegas": "+36.1699-115.1398/",
-    "San Jose": "+37.3382-121.8863/"
+    "San Jose": "+37.3382-121.8863/",
 }
 
 def getAirtableRecords(offset):
@@ -42,6 +44,9 @@ def getAirtableRecords(offset):
 
     try:
         response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 429: # Request rate limit case
+            time.sleep(30)
+            response = requests.get(url, headers=headers, params=params)
         response.raise_for_status()
 
         data = response.json()
@@ -128,43 +133,37 @@ def getVideoDimension(videPath):
 
 
 def uploadToDrive(filePath, fileName):
-    SERVICE_ACCOUNT_FILE = "tiktok-drive-429704-9dcb46938fb6.json"
-    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    SERVICE_ACCOUNT_FILE = "creds.json"
+    SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
-    service = build('drive', 'v3', credentials=credentials)
+    service = build("drive", "v3", credentials=credentials)
 
     media = MediaFileUpload(filePath, resumable=True)
 
-    fileMetadata = {
-        'name': fileName,
-        'parents': [GOOGLE_DRIVE_FOLDER_ID]
-    }
+    fileMetadata = {"name": fileName, "parents": [GOOGLE_DRIVE_FOLDER_ID]}
 
-    file = service.files().create(
-        body=fileMetadata,
-        media_body=media,
-        fields='id'
-    ).execute()
+    file = service.files().create(body=fileMetadata, media_body=media, fields="id").execute()
 
     fileUrl = driveDownloadBaseUrl + file.get("id")
     return fileUrl
 
+
 def getVideoBitrate(filePath):
     cmd = [
-        'ffprobe', 
-        '-v', 'quiet',
-        '-select_streams', 'v:0',
-        '-print_format', 'json',
-        '-show_entries', 'stream=bit_rate',
-        filePath
+        "ffprobe",
+        "-v", "quiet",
+        "-select_streams", "v:0",
+        "-print_format", "json",
+        "-show_entries", "stream=bit_rate",
+        filePath,
     ]
-    
+
     result = subprocess.run(cmd, capture_output=True, text=True)
     data = json.loads(result.stdout)
-    
-    return int(data['streams'][0]['bit_rate'])
+
+    return int(data["streams"][0]["bit_rate"])
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
@@ -185,7 +184,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "com.apple.quicktime.software": "17.4.1",
         "com.apple.quicktime.creationdate": f"{dateStr}+0000",
         "com.apple.quicktime.location.ISO6709": locationIso6709,
-        "com.apple.quicktime.location.accuracy.horizontal": "6297.954794"
+        "com.apple.quicktime.location.accuracy.horizontal": "6297.954794",
     }
 
     videoDimensions = getVideoDimension(f"{processedVideos}/{fileName}.mp4")
@@ -216,20 +215,71 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
         "-vf", f'rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
-        '-c:v', 'libx264',
-        '-b:v', bitrateKbps,
+        "-c:v", "libx264",
+        "-b:v", bitrateKbps,
         "-c:a", "copy",
     ]
 
     for key, value in metadata.items():
-        ffmpegCommand.extend(['-metadata', f'{key}={value}'])
+        ffmpegCommand.extend(["-metadata", f"{key}={value}"])
 
     ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov")
 
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
 
     fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov", f"{fileName}_{processingSpecs['variantId']}.mov")
-    return fileUrl
+
+    data = {
+        "variantId": processingSpecs["variantId"],
+        "fileUrl": fileUrl,
+        "fileName": f"{fileName}_{processingSpecs['variantId']}.mov",
+    }
+    return data
+
+
+def addDataToAirTable(newRecordData):
+
+    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID_DRIVE}"
+    headers = {
+        "Authorization": f"Bearer {AIRTABLE_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    records = []
+    for variant in newRecordData["variantsList"]:
+        randomNumber = random.randint(1000, 9999)
+        record = {
+            "fields": {
+                "Name": variant["fileName"],
+                "Tiktok ID": newRecordData["tiktokId"],
+                "Tiktok URL": newRecordData["tiktokUrl"],
+                "sound url": newRecordData["soundUrl"],
+                "Google Drive URL": variant["fileUrl"],
+                "Variant Id": variant["variantId"],
+                "Number": randomNumber
+            }
+        }
+        records.append(record)
+
+    payload = json.dumps({"records": records})
+
+    try:
+        response = requests.request("POST", url, headers=headers, data=payload)
+        if response.status_code == 429: # Request rate limit case
+            time.sleep(30)
+            response = requests.request("POST", url, headers=headers, data=payload)
+        response.raise_for_status()
+
+        data = response.json()
+
+    except requests.exceptions.HTTPError as e:
+        print(f"HTTP Error: {e}")
+        print(f"Response content: {response.text}")
+        return []
+
+    except requests.exceptions.RequestException as e:
+        print(f"Request Exception: {e}")
+        return []
 
 
 if __name__ == "__main__":
@@ -350,15 +400,22 @@ if __name__ == "__main__":
                 recordFields = record["fields"]
                 fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
-                variantsUrls = []
+                variantsList = []
                 for specs in processingSpecs:
-                    fileUrl = processVideo(processedVideos, fileName, specs)
-                    variantsUrls.append(fileUrl)
-                    # Add drive URL and other info to AirTable
+                    variant = processVideo(processedVideos, fileName, specs)
+                    variantsList.append(variant)
 
                     print(f"{specs} processed")
+
+                newRecordData = {
+                    "tiktokId": record["fields"]["Tiktok ID"],
+                    "tiktokUrl": record["fields"]["Video URL"],
+                    "soundUrl": record["fields"]["short sound url"],
+                    "variantsList": variantsList
+                }
+
+                addDataToAirTable(newRecordData)
                 removeFiles(processedVideos)
-                print(variantsUrls)
         else:
             print("No records retrieved from AirTable")
         firstRequest = False

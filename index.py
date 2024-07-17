@@ -1,6 +1,9 @@
-# import ffmpeg
 import requests, json, subprocess, os, math
 from dotenv import load_dotenv
+
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 load_dotenv()
 
@@ -8,9 +11,10 @@ AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_TABLE_ID")
 AIRTABLE_VIEW_ID = os.getenv("AIRTABLE_VIEW_ID")
+GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 baseUrl = "https://api.airtable.com/v0"
-
+driveDownloadBaseUrl = "https://drive.google.com/uc?export=download&id="
 
 def getAirtableRecords(offset):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
@@ -58,7 +62,7 @@ def checkDir(folderName):
     folderPath = os.path.join(currentDirectory, folderName)
     if not os.path.exists(folderPath):
         os.makedirs(folderPath)
-        print(f"Folder '{downloadedVideos}' created.")
+        print(f"Folder '{processedVideos}' created.")
 
 
 def removeFiles(folderName):
@@ -109,28 +113,42 @@ def getVideoDimension(videPath):
         return None
 
 
-def processVideo(
-    downloadedVideos,
-    rotatedVideos,
-    croppedVideos,
-    resizedVideos,
-    fileName,
-    processingSpecs,
-):
+def uploadToDrive(filePath, fileName):
+    SERVICE_ACCOUNT_FILE = "tiktok-drive-429704-9dcb46938fb6.json"
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-    videoDimensions = getVideoDimension(f"{downloadedVideos}/{fileName}.mp4")
+    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
+    service = build('drive', 'v3', credentials=credentials)
+
+    media = MediaFileUpload(filePath, resumable=True)
+
+    fileMetadata = {
+        'name': fileName,
+        'parents': [GOOGLE_DRIVE_FOLDER_ID]
+    }
+
+    file = service.files().create(
+        body=fileMetadata,
+        media_body=media,
+        fields='id'
+    ).execute()
+
+    fileUrl = driveDownloadBaseUrl + file.get("id")
+    return fileUrl
+
+
+def processVideo(processedVideos, fileName, processingSpecs):
+
+    videoDimensions = getVideoDimension(f"{processedVideos}/{fileName}.mp4")
 
     angleRadians = math.radians(processingSpecs["rotationAngle"])
 
     sinTheta = math.sin(angleRadians)
     cosTheta = math.cos(angleRadians)
 
-    newWidth = abs(videoDimensions["width"] * cosTheta) + abs(
-        videoDimensions["height"] * sinTheta
-    )
-    newHeight = abs(videoDimensions["width"] * sinTheta) + abs(
-        videoDimensions["height"] * cosTheta
-    )
+    newWidth = abs(videoDimensions["width"] * cosTheta) + abs(videoDimensions["height"] * sinTheta)
+    newHeight = abs(videoDimensions["width"] * sinTheta) + abs(videoDimensions["height"] * cosTheta)
 
     updatedDimensions = {"width": newWidth, "height": newHeight}
 
@@ -146,106 +164,120 @@ def processVideo(
 
     ffmpegCommand = [
         "ffmpeg",
-        "-i",
-        f"{downloadedVideos}/{fileName}.mp4",
-        "-vf",
-        f'rotate={processingSpecs["rotationAngle"]}*PI/180',
-        "-metadata:s:v:0",
-        f'rotate={processingSpecs["rotationAngle"]}',
-        "-codec:a",
-        "copy",
-        f"{rotatedVideos}/{fileName}.mp4",
+        "-i", f"{processedVideos}/{fileName}.mp4",
+        "-vf", f'rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
+        "-c:a", "copy",
+        f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov",
     ]
-
     subprocess.run(ffmpegCommand, check=True)
 
-    ffmpegCommand = [
-        "ffmpeg",
-        "-i",
-        f"{rotatedVideos}/{fileName}.mp4",
-        "-vf",
-        f'crop={updatedDimensions["width"]}:{updatedDimensions["height"]}',
-        "-metadata:s:v:0",
-        f'rotate={processingSpecs["rotationAngle"]}',
-        "-codec:a",
-        "copy",
-        f"{croppedVideos}/{fileName}.mp4",
-    ]
-
-    subprocess.run(ffmpegCommand, check=True)
-
-    ffmpegCommand = [
-        "ffmpeg",
-        "-i",
-        f"{croppedVideos}/{fileName}.mp4",
-        "-vf",
-        f'scale={videoDimensions["width"]}:{videoDimensions["height"]}',
-        "-c:a",
-        "copy",
-        f"{resizedVideos}/{fileName}.mov",
-    ]
-
-    subprocess.run(ffmpegCommand, check=True)
-
-    print(f"{fileName}.mp4 processed and saved")
+    fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov", f"{fileName}_{processingSpecs['variantId']}.mov")
+    return fileUrl
 
 
 if __name__ == "__main__":
-    downloadedVideos = "DownloadedVideos"
-    rotatedVideos = "RotatedVideos"
-    croppedVideos = "CroppedVideos"
-    resizedVideos = "ResizedVideos"
+    processedVideos = "ProcessedVideos"
 
-    checkDir(downloadedVideos)
-    removeFiles(downloadedVideos)
-
-    checkDir(rotatedVideos)
-    removeFiles(rotatedVideos)
-
-    checkDir(croppedVideos)
-    removeFiles(croppedVideos)
-
-    checkDir(resizedVideos)
-    removeFiles(resizedVideos)
+    checkDir(processedVideos)
+    removeFiles(processedVideos)
 
     offset = None
     firstRequest = True
 
+    contrastEquation = {
+        'mild': 1.2,
+        'moderate': 1.5,
+        'aggressive': 1.8
+    }
+
+    # FFMPEG
+    # Brightness range: -1.0 to +1.0, default: 0
+    # Saturation range: 0.0 to 3.0, default: 1
+    # Gamma range: 0.1 to 3.0, default 1
+
+    # Website range
+    # Brightness range: -1 to +2.5
+    # Saturation range: 1 to 6
+    # Gamma range: 2 to 6
+
+    # processingSpecs = [
+    #     {
+    #         "rotationAngle": 3,
+    #         "contrast": "mild",
+    #         "brightness": -1,
+    #         "saturation": 1,
+    #         "gamma": 1,
+    #     },
+    #     {
+    #         "rotationAngle": 2,
+    #         "contrast": "aggressive",
+    #         "brightness": 2,
+    #         "saturation": 7,
+    #         "gamma": 8,
+    #     },
+    #     {
+    #         "rotationAngle": 3,
+    #         "contrast": "moderate",
+    #         "brightness": 1.5,
+    #         "saturation": 7,
+    #         "gamma": 8,
+    #     },
+    #     {
+    #         "rotationAngle": 0,
+    #         "contrast": "aggressive",
+    #         "brightness": 0,
+    #         "saturation": 5,
+    #         "gamma": 3,
+    #     },
+    #     {
+    #         "rotationAngle": -3,
+    #         "contrast": "mild",
+    #         "brightness": -1.5,
+    #         "saturation": 1,
+    #         "gamma": 2,
+    #     },
+    # ]
+
     processingSpecs = [
         {
+            "variantId": 1,
             "rotationAngle": 3,
-            "contrast": "mild",
-            "brightness": -1,
+            "contrast": 1.2,
+            "brightness": -0.1,
+            "saturation": 1,
+            "gamma": 1.0,
+        },
+        {
+            "variantId": 2,
+            "rotationAngle": 2,
+            "contrast": 1.8,
+            "brightness": 0.1,
+            "saturation": 2,
+            "gamma": 2.0,
+        },
+        {
+            "variantId": 3,
+            "rotationAngle": 3,
+            "contrast": 1.5,
+            "brightness": 0.15,
+            "saturation": 2,
+            "gamma": 2.0,
+        },
+        {
+            "variantId": 4,
+            "rotationAngle": 0,
+            "contrast": 1.8,
+            "brightness": 0,
+            "saturation": 1.5,
+            "gamma": 1.2,
+        },
+        {
+            "variantId": 5,
+            "rotationAngle": -3,
+            "contrast": 1.2,
+            "brightness": -0.15,
             "saturation": 1,
             "gamma": 1,
-        },
-        {
-            "rotationAngle": 2,
-            "contrast": "aggressive",
-            "brightness": 2,
-            "saturation": 7,
-            "gamma": 8,
-        },
-        {
-            "rotationAngle": 3,
-            "contrast": "moderate",
-            "brightness": 1.5,
-            "saturation": 7,
-            "gamma": 8,
-        },
-        {
-            "rotationAngle": 0,
-            "contrast": "aggressive",
-            "brightness": 0,
-            "saturation": 5,
-            "gamma": 3,
-        },
-        {
-            "rotationAngle": -3,
-            "contrast": "mild",
-            "brightness": -1.5,
-            "saturation": 1,
-            "gamma": 2,
         },
     ]
 
@@ -259,20 +291,17 @@ if __name__ == "__main__":
             for record in records[:1]:
                 recordId = record["id"]
                 recordFields = record["fields"]
-                fileName = downloadVideo(
-                    recordFields["Google Drive URL"], downloadedVideos, recordId
-                )
+                fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
-                processVideo(
-                    downloadedVideos,
-                    rotatedVideos,
-                    croppedVideos,
-                    resizedVideos,
-                    fileName,
-                    processingSpecs,
-                )
-                print(getVideoDimension(f"{downloadedVideos}/{fileName}.mp4"))
-                print(getVideoDimension(f"{resizedVideos}/{fileName}.mov"))
+                variantsUrls = []
+                for specs in processingSpecs:
+                    fileUrl = processVideo(processedVideos, fileName, specs)
+                    variantsUrls.append(fileUrl)
+                    # Add drive URL and other info to AirTable
+
+                    print(f"{specs} processed")
+                removeFiles(processedVideos)
+                print(variantsUrls)
         else:
             print("No records retrieved from AirTable")
         firstRequest = False

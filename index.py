@@ -418,7 +418,7 @@ if __name__ == "__main__":
 
         if records:
             print(f"Retrieved {len(records)} records from Airtable")
-            for record in records[:1]:
+            for record in records:
                 recordId = record["id"]
                 recordFields = record["fields"]
                 fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)

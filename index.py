@@ -36,7 +36,7 @@ def getAirtableRecords(offset):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
 
-    params = {"view": AIRTABLE_VIEW_ID}
+    params = {"view": AIRTABLE_VIEW_ID, 'filterByFormula': '{Video Processed} = False()'}
     if offset is not None:
         params["offset"] = offset
 
@@ -227,12 +227,14 @@ def processVideo(processedVideos, fileName, processingSpecs):
 
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
 
-    fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov", f"{fileName}_{processingSpecs['variantId']}.mov")
+    randomNumber = random.randint(1000, 9999)
+    fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov", f"IMG_{randomNumber}.MOV")
 
     data = {
         "variantId": processingSpecs["variantId"],
         "fileUrl": fileUrl,
-        "fileName": f"{fileName}_{processingSpecs['variantId']}.mov",
+        "fileName": f"IMG_{randomNumber}.MOV",
+        "randomNumber": randomNumber
     }
     return data
 
@@ -247,16 +249,15 @@ def addDataToAirTable(newRecordData):
 
     records = []
     for variant in newRecordData["variantsList"]:
-        randomNumber = random.randint(1000, 9999)
         record = {
             "fields": {
                 "Name": variant["fileName"],
-                "Tiktok ID": newRecordData["tiktokId"],
+                "Tiktok ID": [newRecordData["recordId"]],
                 "Tiktok URL": newRecordData["tiktokUrl"],
                 "sound url": newRecordData["soundUrl"],
                 "Google Drive URL": variant["fileUrl"],
                 "Variant Id": variant["variantId"],
-                "Number": randomNumber
+                "Number": variant["randomNumber"]
             }
         }
         records.append(record)
@@ -281,6 +282,28 @@ def addDataToAirTable(newRecordData):
         print(f"Request Exception: {e}")
         return []
 
+
+def updateRecordStatus(data):
+    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}/{data['recordId']}"
+    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", 'Content-Type': 'application/json',}
+
+    payload = json.dumps({
+        "fields": {
+            "Video Processed": True
+        }
+    })
+
+    try:
+        response = requests.request("PATCH", url, headers=headers, data=payload)
+        if response.status_code == 429: # Request rate limit case
+            time.sleep(30)
+            response = requests.request("PATCH", url, headers=headers, data=payload)
+        response.raise_for_status()
+        return True
+    except requests.exceptions.HTTPError as e:
+        print(f"HTTP Error: {e}")
+        print(f"Response content: {response.text}")
+        return False
 
 if __name__ == "__main__":
     processedVideos = "ProcessedVideos"
@@ -408,13 +431,16 @@ if __name__ == "__main__":
                     print(f"{specs} processed")
 
                 newRecordData = {
-                    "tiktokId": record["fields"]["Tiktok ID"],
+                    "recordId": recordId,
                     "tiktokUrl": record["fields"]["Video URL"],
                     "soundUrl": record["fields"]["short sound url"],
                     "variantsList": variantsList
                 }
 
                 addDataToAirTable(newRecordData)
+                status = updateRecordStatus({"recordId": recordId})
+                if not status:
+                    print("Could not update status in linked table")
                 removeFiles(processedVideos)
         else:
             print("No records retrieved from AirTable")

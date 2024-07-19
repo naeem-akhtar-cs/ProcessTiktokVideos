@@ -7,6 +7,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 from flask import Flask
+from celery import Celery
 
 app = Flask(__name__)
 
@@ -43,16 +44,11 @@ def make_celery(app):
         broker=app.config['CELERY_BROKER_URL']
     )
     celery.conf.update(app.config)
-    class ContextTask(celery.Task):
-        def __call__(self, *args, **kwargs):
-            with app.app_context():
-                return self.run(*args, **kwargs)
-    celery.Task = ContextTask
     return celery
 
 app.config.update(
-    CELERY_BROKER_URL='redis://localhost:6379/0',
-    CELERY_RESULT_BACKEND='redis://localhost:6379/0'
+    CELERY_BROKER_URL='redis://redis:6379/0',
+    CELERY_RESULT_BACKEND='redis://redis:6379/0'
 )
 
 celery = make_celery(app)
@@ -121,6 +117,16 @@ def removeFiles(folderName):
                 shutil.rmtree(filePath)
         except Exception as e:
             print(f"Failed to delete {filePath}. Reason: {e}")
+
+
+def removeFile(filePath):
+    try:
+        if os.path.isfile(filePath) or os.path.islink(filePath):
+            os.unlink(filePath)
+            print(f"File: {filePath} removed")
+    except Exception as e:
+        print(f"Failed to delete {filePath}. Reason: {e}")
+
 
 
 def getVideoDimension(videPath):
@@ -332,11 +338,7 @@ def updateRecordStatus(data):
 
 
 @celery.task()
-def processVideoTask(record):
-    processedVideos = "ProcessedVideos"
-
-    checkDir(processedVideos)
-    removeFiles(processedVideos)
+def processVideoTask(record, processedVideos):
 
     recordId = record["id"]
     recordFields = record["fields"]
@@ -365,12 +367,21 @@ def processVideoTask(record):
     addDataToAirTable(newRecordData)
     status = updateRecordStatus({"recordId": recordId})
     if not status:
-        print("Could not update status in linked table")
-    removeFiles(processedVideos)
+        print("Could not update status in linked table for record: {recordId}")
+    
+    for variant in variantsList:
+        filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
+        removeFile(filePath)
 
 
 @app.route('/')
 def startProcessing():
+
+    processedVideos = "ProcessedVideos"
+
+    checkDir(processedVideos)
+    removeFiles(processedVideos)
+
     offset = None
     firstRequest = True
 
@@ -379,9 +390,11 @@ def startProcessing():
         records = data["records"]
         offset = data["offset"]
 
+        print(f"Retrieved: {len(records)}")
+
         if records:
             for record in records:
-                processVideoTask.delay(record)
+                processVideoTask.delay(record, processedVideos)
         firstRequest = False
 
     return "Processing started."

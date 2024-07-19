@@ -15,7 +15,7 @@ services:
 
   worker:
     build: .
-    command: sh -c "celery -A app.celery worker --loglevel=info -c 2"
+    command: sh -c "celery -A app.celery worker --loglevel=info -c 1"
     volumes:
       - .:/app
     depends_on:

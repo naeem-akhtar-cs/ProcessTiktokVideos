@@ -102,7 +102,7 @@ def checkDir(folderName):
     folderPath = os.path.join(currentDirectory, folderName)
     if not os.path.exists(folderPath):
         os.makedirs(folderPath)
-        print(f"Folder '{processedVideos}' created.")
+        print(f"Folder '{folderPath}' created.")
 
 
 def removeFiles(folderName):

@@ -20,23 +20,6 @@ AIRTABLE_TABLE_ID_DRIVE = os.getenv("AIRTABLE_TABLE_ID_DRIVE")
 
 GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
-# SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-
-# SERVICE_ACCOUNT_INFO = {
-#   "type": os.getenv("GOOGLE_CLOUD_ACCOUNT_TYPE"),
-#   "project_id": os.getenv("GOOGLE_CLOUD_PRIVATE_KEY_ID"),
-#   "private_key_id": os.getenv("GOOGLE_CLOUD_PRIVATE_KEY_ID"),
-#   "private_key": os.getenv("GOOGLE_CLOUD_PRIVATE_KEY"),
-#   "client_email": os.getenv("GOOGLE_CLOUD_CLIENT_EMAIL"),
-#   "client_id": os.getenv("GOOGLE_CLOUD_CLIENT_ID"),
-#   "auth_uri": os.getenv("GOOGLE_CLOUD_AUTH_URI"),
-#   "token_uri": os.getenv("GOOGLE_CLOUD_TOKEN_URI"),
-#   "auth_provider_x509_cert_url": os.getenv("GOOGLE_CLOUD_AUTH_CERT_URL"),
-#   "client_x509_cert_url": os.getenv("GOOGLE_CLOUD_CLIENT_CERT_URL"),
-#   "universe_domain": os.getenv("GOOGLE_CLOUD_UNIVERSE_DOMAIN")
-# }
-
-
 baseUrl = "https://api.airtable.com/v0"
 driveDownloadBaseUrl = "https://drive.google.com/uc?export=download&id="
 
@@ -52,6 +35,27 @@ locations = {
     "Las Vegas": "+36.1699-115.1398/",
     "San Jose": "+37.3382-121.8863/",
 }
+
+def make_celery(app):
+    celery = Celery(
+        app.import_name,
+        backend=app.config['CELERY_RESULT_BACKEND'],
+        broker=app.config['CELERY_BROKER_URL']
+    )
+    celery.conf.update(app.config)
+    class ContextTask(celery.Task):
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                return self.run(*args, **kwargs)
+    celery.Task = ContextTask
+    return celery
+
+app.config.update(
+    CELERY_BROKER_URL='redis://localhost:6379/0',
+    CELERY_RESULT_BACKEND='redis://localhost:6379/0'
+)
+
+celery = make_celery(app)
 
 def getAirtableRecords(offset):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
@@ -326,112 +330,49 @@ def updateRecordStatus(data):
         print(f"Response content: {response.text}")
         return False
 
-@app.route('/')
-def processVideos():
+
+@celery.task()
+def processVideoTask(record):
     processedVideos = "ProcessedVideos"
 
     checkDir(processedVideos)
     removeFiles(processedVideos)
 
-    offset = None
-    firstRequest = True
-
-    contrastEquation = {
-        'mild': 1.2,
-        'moderate': 1.5,
-        'aggressive': 1.8
-    }
-
-    # FFMPEG
-    # Brightness range: -1.0 to +1.0, default: 0
-    # Saturation range: 0.0 to 3.0, default: 1
-    # Gamma range: 0.1 to 3.0, default 1
-
-    # Website range
-    # Brightness range: -1 to +2.5
-    # Saturation range: 1 to 6
-    # Gamma range: 2 to 6
-
-    # processingSpecs = [
-    #     {
-    #         "rotationAngle": 3,
-    #         "contrast": "mild",
-    #         "brightness": -1,
-    #         "saturation": 1,
-    #         "gamma": 1,
-    #     },
-    #     {
-    #         "rotationAngle": 2,
-    #         "contrast": "aggressive",
-    #         "brightness": 2,
-    #         "saturation": 7,
-    #         "gamma": 8,
-    #     },
-    #     {
-    #         "rotationAngle": 3,
-    #         "contrast": "moderate",
-    #         "brightness": 1.5,
-    #         "saturation": 7,
-    #         "gamma": 8,
-    #     },
-    #     {
-    #         "rotationAngle": 0,
-    #         "contrast": "aggressive",
-    #         "brightness": 0,
-    #         "saturation": 5,
-    #         "gamma": 3,
-    #     },
-    #     {
-    #         "rotationAngle": -3,
-    #         "contrast": "mild",
-    #         "brightness": -1.5,
-    #         "saturation": 1,
-    #         "gamma": 2,
-    #     },
-    # ]
+    recordId = record["id"]
+    recordFields = record["fields"]
+    fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     processingSpecs = [
-        {
-            "variantId": 1,
-            "rotationAngle": 3,
-            "contrast": 1.2,
-            "brightness": -0.1,
-            "saturation": 1,
-            "gamma": 1.0,
-        },
-        {
-            "variantId": 2,
-            "rotationAngle": 2,
-            "contrast": 1.8,
-            "brightness": 0.1,
-            "saturation": 2,
-            "gamma": 2.0,
-        },
-        {
-            "variantId": 3,
-            "rotationAngle": 3,
-            "contrast": 1.5,
-            "brightness": 0.15,
-            "saturation": 2,
-            "gamma": 2.0,
-        },
-        {
-            "variantId": 4,
-            "rotationAngle": 0,
-            "contrast": 1.8,
-            "brightness": 0,
-            "saturation": 1.5,
-            "gamma": 1.2,
-        },
-        {
-            "variantId": 5,
-            "rotationAngle": -3,
-            "contrast": 1.2,
-            "brightness": -0.15,
-            "saturation": 1,
-            "gamma": 1,
-        },
+        {"variantId": 1, "rotationAngle": 3, "contrast": 1.2, "brightness": -0.1, "saturation": 1, "gamma": 1.0},
+        {"variantId": 2, "rotationAngle": 2, "contrast": 1.8, "brightness": 0.1, "saturation": 2, "gamma": 2.0},
+        {"variantId": 3, "rotationAngle": 3, "contrast": 1.5, "brightness": 0.15, "saturation": 2, "gamma": 2.0},
+        {"variantId": 4, "rotationAngle": 0, "contrast": 1.8, "brightness": 0, "saturation": 1.5, "gamma": 1.2},
+        {"variantId": 5, "rotationAngle": -3, "contrast": 1.2, "brightness": -0.15, "saturation": 1, "gamma": 1},
     ]
+
+    variantsList = []
+    for specs in processingSpecs:
+        variant = processVideo(processedVideos, fileName, specs)
+        variantsList.append(variant)
+
+    newRecordData = {
+        "recordId": recordId,
+        "tiktokUrl": record["fields"]["Video URL"],
+        "soundUrl": record["fields"]["short sound url"],
+        "variantsList": variantsList
+    }
+
+    addDataToAirTable(newRecordData)
+    status = updateRecordStatus({"recordId": recordId})
+    if not status:
+        print("Could not update status in linked table")
+    removeFiles(processedVideos)
+
+
+@app.route('/')
+def startProcessing():
+    offset = None
+    firstRequest = True
 
     while offset is not None or firstRequest:
         data = getAirtableRecords(offset)
@@ -439,34 +380,11 @@ def processVideos():
         offset = data["offset"]
 
         if records:
-            print(f"Retrieved {len(records)} records from Airtable")
             for record in records:
-                recordId = record["id"]
-                recordFields = record["fields"]
-                fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
-
-                variantsList = []
-                for specs in processingSpecs:
-                    variant = processVideo(processedVideos, fileName, specs)
-                    variantsList.append(variant)
-
-                    print(f"{specs} processed")
-
-                newRecordData = {
-                    "recordId": recordId,
-                    "tiktokUrl": record["fields"]["Video URL"],
-                    "soundUrl": record["fields"]["short sound url"],
-                    "variantsList": variantsList
-                }
-
-                addDataToAirTable(newRecordData)
-                status = updateRecordStatus({"recordId": recordId})
-                if not status:
-                    print("Could not update status in linked table")
-                removeFiles(processedVideos)
-        else:
-            print("No records retrieved from AirTable")
+                processVideoTask.delay(record)
         firstRequest = False
+
+    return "Processing started."
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

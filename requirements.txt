@@ -6,3 +6,5 @@ google-api-python-client
 python-dotenv
 flask
 gunicorn
+celery
+redis

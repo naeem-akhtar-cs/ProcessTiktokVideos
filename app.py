@@ -40,7 +40,7 @@ locations = {
 def make_celery(app):
     celery = Celery(
         app.import_name,
-        backend=app.config['CELERY_RESULT_BACKEND'],
+        backend=app.config['result_backend'],
         broker=app.config['CELERY_BROKER_URL']
     )
     celery.conf.update(app.config)
@@ -48,7 +48,7 @@ def make_celery(app):
 
 app.config.update(
     CELERY_BROKER_URL='redis://redis:6379/0',
-    CELERY_RESULT_BACKEND='redis://redis:6379/0'
+    result_backend='redis://redis:6379/0'
 )
 
 celery = make_celery(app)

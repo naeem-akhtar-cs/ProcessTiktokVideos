@@ -1,2 +1,1 @@
-Build docker image: docker build -t videos .
-Run: docker run -it videos
+docker build -t processvideos . && docker run -d -p 80:5000 processvideos

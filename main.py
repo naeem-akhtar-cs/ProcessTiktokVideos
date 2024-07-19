@@ -20,6 +20,23 @@ AIRTABLE_TABLE_ID_DRIVE = os.getenv("AIRTABLE_TABLE_ID_DRIVE")
 
 GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
+# SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+
+# SERVICE_ACCOUNT_INFO = {
+#   "type": os.getenv("GOOGLE_CLOUD_ACCOUNT_TYPE"),
+#   "project_id": os.getenv("GOOGLE_CLOUD_PRIVATE_KEY_ID"),
+#   "private_key_id": os.getenv("GOOGLE_CLOUD_PRIVATE_KEY_ID"),
+#   "private_key": os.getenv("GOOGLE_CLOUD_PRIVATE_KEY"),
+#   "client_email": os.getenv("GOOGLE_CLOUD_CLIENT_EMAIL"),
+#   "client_id": os.getenv("GOOGLE_CLOUD_CLIENT_ID"),
+#   "auth_uri": os.getenv("GOOGLE_CLOUD_AUTH_URI"),
+#   "token_uri": os.getenv("GOOGLE_CLOUD_TOKEN_URI"),
+#   "auth_provider_x509_cert_url": os.getenv("GOOGLE_CLOUD_AUTH_CERT_URL"),
+#   "client_x509_cert_url": os.getenv("GOOGLE_CLOUD_CLIENT_CERT_URL"),
+#   "universe_domain": os.getenv("GOOGLE_CLOUD_UNIVERSE_DOMAIN")
+# }
+
+
 baseUrl = "https://api.airtable.com/v0"
 driveDownloadBaseUrl = "https://drive.google.com/uc?export=download&id="
 
@@ -450,8 +467,6 @@ def processVideos():
         else:
             print("No records retrieved from AirTable")
         firstRequest = False
-
-
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
     print(f"App running at port 8080")

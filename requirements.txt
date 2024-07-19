@@ -1,5 +1,4 @@
-Flask
-gunicorn
+requests
 google-auth
 google-auth-oauthlib
 google-auth-httplib2

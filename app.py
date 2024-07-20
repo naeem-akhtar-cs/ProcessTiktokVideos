@@ -244,12 +244,12 @@ def processVideo(processedVideos, fileName, processingSpecs):
 
     mirrorCommand = ""
     if processingSpecs["mirror"]:
-        mirrorCommand = "hflip"
+        mirrorCommand = "hflip,"
 
     ffmpegCommand = [
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'{mirrorCommand},rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
+        "-vf", f'{mirrorCommand}rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
         "-c:v", "libx264",
         "-b:v", bitrateKbps,
         "-c:a", "copy",

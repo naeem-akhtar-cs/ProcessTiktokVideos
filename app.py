@@ -242,10 +242,14 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "height": int(videoDimensions["height"] - dimensionsDiff["height"]),
     }
 
+    mirrorCommand = ""
+    if processingSpecs["mirror"]:
+        mirrorCommand = "hflip"
+
     ffmpegCommand = [
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
+        "-vf", f'{mirrorCommand},rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
         "-c:v", "libx264",
         "-b:v", bitrateKbps,
         "-c:a", "copy",
@@ -337,7 +341,7 @@ def updateRecordStatus(data):
         return False
 
 
-@celery.task()
+# @celery.task()
 def processVideoTask(record, processedVideos):
 
     recordId = record["id"]
@@ -345,11 +349,11 @@ def processVideoTask(record, processedVideos):
     fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     processingSpecs = [
-        {"variantId": 1, "rotationAngle": 3, "contrast": 1.2, "brightness": -0.1, "saturation": 1, "gamma": 1.0},
-        {"variantId": 2, "rotationAngle": 2, "contrast": 1.8, "brightness": 0.1, "saturation": 2, "gamma": 2.0},
-        {"variantId": 3, "rotationAngle": 3, "contrast": 1.5, "brightness": 0.15, "saturation": 2, "gamma": 2.0},
-        {"variantId": 4, "rotationAngle": 0, "contrast": 1.8, "brightness": 0, "saturation": 1.5, "gamma": 1.2},
-        {"variantId": 5, "rotationAngle": -3, "contrast": 1.2, "brightness": -0.15, "saturation": 1, "gamma": 1},
+        {"variantId": 1, "rotationAngle": 3, "contrast": 1.2, "brightness": -0.1, "saturation": 1, "gamma": 1.0, "mirror": True},
+        {"variantId": 2, "rotationAngle": 2, "contrast": 1.8, "brightness": 0.1, "saturation": 2, "gamma": 2.0, "mirror": True},
+        {"variantId": 3, "rotationAngle": 3, "contrast": 1.5, "brightness": 0.15, "saturation": 2, "gamma": 2.0, "mirror": False},
+        {"variantId": 4, "rotationAngle": 0, "contrast": 1.8, "brightness": 0, "saturation": 1.5, "gamma": 1.2, "mirror": True},
+        {"variantId": 5, "rotationAngle": -3, "contrast": 1.2, "brightness": -0.15, "saturation": 1, "gamma": 1, "mirror": False},
     ]
 
     variantsList = []

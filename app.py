@@ -341,7 +341,7 @@ def updateRecordStatus(data):
         return False
 
 
-# @celery.task()
+@celery.task()
 def processVideoTask(record, processedVideos):
 
     recordId = record["id"]

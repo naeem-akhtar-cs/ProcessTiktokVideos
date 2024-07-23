@@ -368,8 +368,6 @@ def getProcessingSpecs():
 def processVideoTask(record, processedVideos, processingSpecs):
 
     print(f"In task: {processingSpecs}")
-    print(record)
-    print(processedVideos)
 
     recordId = record["id"]
     recordFields = record["fields"]
@@ -407,8 +405,17 @@ def processVideoTask(record, processedVideos, processingSpecs):
         removeFile(filePath)
 
 
-def scheduleProcessingTasks(processedVideos, processingSpecs):
-    print(f"In scheduleProcessingTasks")
+@app.route('/')
+def startProcessing():
+    print("Request received")
+    processedVideos = "ProcessedVideos"
+
+    checkDir(processedVideos)
+    removeFiles(processedVideos)
+
+    processingSpecs = getProcessingSpecs()
+    print(f"Test: {processingSpecs}")
+
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
@@ -423,23 +430,7 @@ def scheduleProcessingTasks(processedVideos, processingSpecs):
                 processVideoTask.delay(record, processedVideos, processingSpecs)
         firstRequest = False
 
-
-@app.route('/')
-def startProcessing():
-
-    print("Request received")
-    processedVideos = "ProcessedVideos"
-
-    checkDir(processedVideos)
-    removeFiles(processedVideos)
-
-    processingSpecs = getProcessingSpecs()
-
-    print(f"Test: {processingSpecs}")
-
-    scheduleProcessingTasks(processedVideos, processingSpecs)
-
-    return jsonify({"status": 200, "message": "Processing started"})
+    return jsonify({"status": 200, "message": "Processing started!!"})
 
 
 @app.route('/processSingleVideo', methods=['POST'])

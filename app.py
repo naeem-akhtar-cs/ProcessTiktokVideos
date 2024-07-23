@@ -440,19 +440,19 @@ def processSingleVideo():
     data = request.get_json()
 
     videoUrl = data["videoUrl"]
-    variantId = data["variantId"]
+    videoSpec = data["videoSpec"]
 
-    processingSpecs = getProcessingSpecs()
-    videoSpec = next((spec for spec in processingSpecs if spec["VariantId"] == variantId), None)
     if videoSpec is None:
         return jsonify("Invalid arguments"), 400
 
     uuidString = str(uuid.uuid4())
 
+    videoSpec["VariantId"] = "TestVariant"
+
     fileName = downloadVideo(videoUrl, processedVideos, uuidString)
     processVideo(processedVideos, fileName, videoSpec)
 
-    filePath = f"{processedVideos}/{uuidString}.mp4"
+    filePath = f"{processedVideos}/{uuidString}_{videoSpec['VariantId']}.mov"
     print(filePath)
     if not os.path.exists(filePath):
         return "Error processing. Ask developer :)"

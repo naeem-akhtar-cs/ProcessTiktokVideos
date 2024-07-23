@@ -1,4 +1,4 @@
-import requests, json, subprocess, os, math, random
+import requests, json, subprocess, os, math, random, uuid
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
@@ -6,7 +6,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-from flask import Flask
+from flask import Flask, request, jsonify, send_file
 from celery import Celery
 
 app = Flask(__name__)
@@ -16,6 +16,7 @@ load_dotenv()
 AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_TABLE_ID")
+AIRTABLE_SPECS_TABLE_ID = os.getenv("AIRTABLE_SPECS_TABLE_ID")
 AIRTABLE_VIEW_ID = os.getenv("AIRTABLE_VIEW_ID")
 AIRTABLE_TABLE_ID_DRIVE = os.getenv("AIRTABLE_TABLE_ID_DRIVE")
 
@@ -222,7 +223,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
     bitrate = getVideoBitrate(f"{processedVideos}/{fileName}.mp4")
     bitrateKbps = f"{bitrate // 1000}k"
 
-    angleRadians = math.radians(processingSpecs["rotationAngle"])
+    angleRadians = math.radians(processingSpecs["RotationAngle"])
 
     sinTheta = math.sin(angleRadians)
     cosTheta = math.cos(angleRadians)
@@ -243,13 +244,13 @@ def processVideo(processedVideos, fileName, processingSpecs):
     }
 
     mirrorCommand = ""
-    if processingSpecs["mirror"]:
+    if processingSpecs["Mirror"]:
         mirrorCommand = "hflip,"
 
     ffmpegCommand = [
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'{mirrorCommand}rotate={processingSpecs["rotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["contrast"]}:brightness={processingSpecs["brightness"]}:saturation={processingSpecs["saturation"]}:gamma={processingSpecs["gamma"]}',
+        "-vf", f'{mirrorCommand}rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
         "-c:v", "libx264",
         "-b:v", bitrateKbps,
         "-c:a", "copy",
@@ -258,20 +259,20 @@ def processVideo(processedVideos, fileName, processingSpecs):
     for key, value in metadata.items():
         ffmpegCommand.extend(["-metadata", f"{key}={value}"])
 
-    ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov")
+    ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
 
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
 
-    randomNumber = random.randint(1000, 9999)
-    fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['variantId']}.mov", f"IMG_{randomNumber}.MOV")
+    # randomNumber = random.randint(1000, 9999)
+    # fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov", f"IMG_{randomNumber}.MOV")
 
-    data = {
-        "variantId": processingSpecs["variantId"],
-        "fileUrl": fileUrl,
-        "fileName": f"IMG_{randomNumber}.MOV",
-        "randomNumber": randomNumber
-    }
-    return data
+    # data = {
+    #     "variantId": processingSpecs["VariantId"],
+    #     "fileUrl": fileUrl,
+    #     "fileName": f"IMG_{randomNumber}.MOV",
+    #     "randomNumber": randomNumber
+    # }
+    # return data
 
 
 def addDataToAirTable(newRecordData):
@@ -341,24 +342,47 @@ def updateRecordStatus(data):
         return False
 
 
+def getProcessingSpecs():
+    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_SPECS_TABLE_ID}"
+    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
+
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 429: # Request rate limit case
+            time.sleep(30)
+            response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+
+        data = response.json()
+        specsInfo =  data.get("records", [])
+        specsList = []
+        for specs in specsInfo:
+            specsList.append(specs["fields"])
+        return specsList
+    except Exception as e:
+        print(e)
+
+
 @celery.task()
-def processVideoTask(record, processedVideos):
+def processVideoTask(record, processedVideos, processingSpecs):
 
     recordId = record["id"]
     recordFields = record["fields"]
     fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
-    processingSpecs = [
-        {"variantId": 1, "rotationAngle": 3, "contrast": 1.2, "brightness": -0.1, "saturation": 1, "gamma": 1.0, "mirror": True},
-        {"variantId": 2, "rotationAngle": 2, "contrast": 1.8, "brightness": 0.1, "saturation": 2, "gamma": 2.0, "mirror": True},
-        {"variantId": 3, "rotationAngle": 3, "contrast": 1.5, "brightness": 0.15, "saturation": 2, "gamma": 2.0, "mirror": False},
-        {"variantId": 4, "rotationAngle": 0, "contrast": 1.8, "brightness": 0, "saturation": 1.5, "gamma": 1.2, "mirror": True},
-        {"variantId": 5, "rotationAngle": -3, "contrast": 1.2, "brightness": -0.15, "saturation": 1, "gamma": 1, "mirror": False},
-    ]
-
     variantsList = []
     for specs in processingSpecs:
-        variant = processVideo(processedVideos, fileName, specs)
+        processVideo(processedVideos, fileName, specs)
+
+        randomNumber = random.randint(1000, 9999)
+        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV")
+
+        variant = {
+            "variantId": processingSpecs["VariantId"],
+            "fileUrl": fileUrl,
+            "fileName": f"IMG_{randomNumber}.MOV",
+            "randomNumber": randomNumber
+        }
         variantsList.append(variant)
 
     newRecordData = {
@@ -386,6 +410,8 @@ def startProcessing():
     checkDir(processedVideos)
     removeFiles(processedVideos)
 
+    processingSpecs = getProcessingSpecs()
+
     offset = None
     firstRequest = True
 
@@ -398,10 +424,41 @@ def startProcessing():
 
         if records:
             for record in records:
-                processVideoTask.delay(record, processedVideos)
+                processVideoTask.delay(record, processedVideos, processingSpecs)
         firstRequest = False
 
     return "Processing started."
+
+
+@app.route('/processSingleVideo', methods=['POST'])
+def processSingleVideo():
+
+    processedVideos = "ProcessSingleVideo"
+    checkDir(processedVideos)
+    removeFiles(processedVideos)
+
+    data = request.get_json()
+
+    videoUrl = data["videoUrl"]
+    variantId = data["variantId"]
+
+    processingSpecs = getProcessingSpecs()
+    videoSpec = next((spec for spec in processingSpecs if spec["VariantId"] == variantId), None)
+    if videoSpec is None:
+        return jsonify("Invalid arguments"), 400
+
+    uuidString = str(uuid.uuid4())
+
+    fileName = downloadVideo(videoUrl, processedVideos, uuidString)
+    processVideo(processedVideos, fileName, videoSpec)
+
+    filePath = f"{processedVideos}/{uuidString}.mp4"
+    print(filePath)
+    if not os.path.exists(filePath):
+        return "Error processing. Ask developer :)"
+
+    return send_file(filePath, mimetype='video/mp4')
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

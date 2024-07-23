@@ -368,6 +368,8 @@ def getProcessingSpecs():
 def processVideoTask(record, processedVideos, processingSpecs):
 
     print(f"In task: {processingSpecs}")
+    print(record)
+    print(processedVideos)
 
     recordId = record["id"]
     recordFields = record["fields"]

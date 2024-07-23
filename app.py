@@ -408,6 +408,7 @@ def processVideoTask(record, processedVideos, processingSpecs):
 @app.route('/')
 def startProcessing():
 
+    print("Request received")
     processedVideos = "ProcessedVideos"
 
     checkDir(processedVideos)

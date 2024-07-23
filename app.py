@@ -406,6 +406,7 @@ def processVideoTask(record, processedVideos, processingSpecs):
 
 
 def scheduleProcessingTasks(processedVideos, processingSpecs):
+    print(f"In scheduleProcessingTasks")
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:

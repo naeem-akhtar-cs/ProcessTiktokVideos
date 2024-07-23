@@ -405,6 +405,22 @@ def processVideoTask(record, processedVideos, processingSpecs):
         removeFile(filePath)
 
 
+def scheduleProcessingTasks(processedVideos, processingSpecs):
+    offset = None
+    firstRequest = True
+    while offset is not None or firstRequest:
+        data = getAirtableRecords(offset)
+        records = data["records"]
+        offset = data["offset"]
+
+        print(f"Retrieved: {len(records)}")
+
+        if records:
+            for record in records:
+                processVideoTask.delay(record, processedVideos, processingSpecs)
+        firstRequest = False
+
+
 @app.route('/')
 def startProcessing():
 
@@ -418,22 +434,9 @@ def startProcessing():
 
     print(f"Test: {processingSpecs}")
 
-    offset = None
-    firstRequest = True
+    scheduleProcessingTasks(processedVideos, processingSpecs)
 
-    while offset is not None or firstRequest:
-        data = getAirtableRecords(offset)
-        records = data["records"]
-        offset = data["offset"]
-
-        print(f"Retrieved: {len(records)}")
-
-        if records:
-            for record in records:
-                processVideoTask.delay(record, processedVideos, processingSpecs)
-        firstRequest = False
-
-    return "Processing started."
+    return jsonify({"status": 200, "message": "Processing started"})
 
 
 @app.route('/processSingleVideo', methods=['POST'])

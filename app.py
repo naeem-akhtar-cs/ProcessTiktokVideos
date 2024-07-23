@@ -367,7 +367,7 @@ def getProcessingSpecs():
 @celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
 
-    print(processingSpecs)
+    print(f"In task: {processingSpecs}")
 
     recordId = record["id"]
     recordFields = record["fields"]

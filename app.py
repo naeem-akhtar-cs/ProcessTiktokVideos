@@ -415,7 +415,7 @@ def startProcessing():
 
     processingSpecs = getProcessingSpecs()
 
-    print(processingSpecs)
+    print(f"Test: {processingSpecs}")
 
     offset = None
     firstRequest = True

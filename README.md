@@ -15,11 +15,4 @@ docker-compose logs -f
 3. Get params from airtable - done
 4. Quality of video
 
-
-curl --location 'http://127.0.0.1:8080/processSingleVideo' \
---header 'Content-Type: application/json' \
---data '{
-    "videoUrl": "https://drive.google.com/uc?id=13TSPEn7x422AYiATdSLLKidy0djeWeh6&export=download",
-    "variantId": 2
-}' \
---output video.mov
+Test procesing with updated code

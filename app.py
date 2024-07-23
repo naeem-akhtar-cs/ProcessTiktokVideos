@@ -244,7 +244,8 @@ def processVideo(processedVideos, fileName, processingSpecs):
     }
 
     mirrorCommand = ""
-    if processingSpecs["Mirror"]:
+    mirrorVideo = processingSpecs.get("Mirror")
+    if mirrorVideo is not None and mirrorVideo == True:
         mirrorCommand = "hflip,"
 
     ffmpegCommand = [
@@ -411,6 +412,8 @@ def startProcessing():
     removeFiles(processedVideos)
 
     processingSpecs = getProcessingSpecs()
+
+    print(processingSpecs)
 
     offset = None
     firstRequest = True

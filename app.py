@@ -367,6 +367,8 @@ def getProcessingSpecs():
 @celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
 
+    print(processingSpecs)
+
     recordId = record["id"]
     recordFields = record["fields"]
     fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)

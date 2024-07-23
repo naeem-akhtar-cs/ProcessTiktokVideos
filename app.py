@@ -378,7 +378,7 @@ def processVideoTask(record, processedVideos, processingSpecs):
         fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV")
 
         variant = {
-            "variantId": processingSpecs["VariantId"],
+            "variantId": specs["VariantId"],
             "fileUrl": fileUrl,
             "fileName": f"IMG_{randomNumber}.MOV",
             "randomNumber": randomNumber

@@ -11,8 +11,8 @@ docker-compose logs -f
 
 # TODO
 1. Scheduler - Done
-2. Test endpoint
-3. Get params from airtable - In progreess
+2. Test endpoint - done
+3. Get params from airtable - done
 4. Quality of video
 
 

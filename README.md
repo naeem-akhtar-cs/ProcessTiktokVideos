@@ -7,3 +7,10 @@ docker-compose down && docker-compose build && docker-compose up -d
 
 docker-compose logs
 docker-compose logs -f
+
+
+# TODO
+1. Scheduler
+2. Test endpoint
+3. Get params from airtable
+4. Quality of video

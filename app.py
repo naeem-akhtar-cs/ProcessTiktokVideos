@@ -366,7 +366,6 @@ def getProcessingSpecs():
 
 @celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
-
     print(f"In task: {processingSpecs}")
 
     recordId = record["id"]
@@ -398,8 +397,8 @@ def processVideoTask(record, processedVideos, processingSpecs):
     addDataToAirTable(newRecordData)
     status = updateRecordStatus({"recordId": recordId})
     if not status:
-        print("Could not update status in linked table for record: {recordId}")
-    
+        print(f"Could not update status in linked table for record: {recordId}")
+
     for variant in variantsList:
         filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
         removeFile(filePath)
@@ -413,12 +412,12 @@ def startProcessing():
     checkDir(processedVideos)
     removeFiles(processedVideos)
 
-    processingSpecs = getProcessingSpecs()
-    print(f"Test: {processingSpecs}")
-
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
+        processingSpecs = getProcessingSpecs()
+        print(f"Test: {processingSpecs}")
+        
         data = getAirtableRecords(offset)
         records = data["records"]
         offset = data["offset"]

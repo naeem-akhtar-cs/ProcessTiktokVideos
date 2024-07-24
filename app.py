@@ -6,8 +6,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, after_this_request
 from celery import Celery
+from celery.result import AsyncResult
 
 app = Flask(__name__)
 
@@ -129,7 +130,6 @@ def removeFile(filePath):
         print(f"Failed to delete {filePath}. Reason: {e}")
 
 
-
 def getVideoDimension(videPath):
     cmd = [
         "ffprobe",
@@ -145,9 +145,7 @@ def getVideoDimension(videPath):
         videPath,
     ]
 
-    result = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     if result.returncode != 0:
         print("Error:", result.stderr)
@@ -199,7 +197,6 @@ def getVideoBitrate(filePath):
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
-
     locationName, locationIso6709 = random.choice(list(locations.items()))
 
     randomDate = datetime.now() - timedelta(hours=random.randint(0, 24))
@@ -263,17 +260,6 @@ def processVideo(processedVideos, fileName, processingSpecs):
     ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
 
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
-
-    # randomNumber = random.randint(1000, 9999)
-    # fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov", f"IMG_{randomNumber}.MOV")
-
-    # data = {
-    #     "variantId": processingSpecs["VariantId"],
-    #     "fileUrl": fileUrl,
-    #     "fileName": f"IMG_{randomNumber}.MOV",
-    #     "randomNumber": randomNumber
-    # }
-    # return data
 
 
 def addDataToAirTable(newRecordData):
@@ -366,8 +352,6 @@ def getProcessingSpecs():
 
 @celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
-    print(f"In task: {processingSpecs}")
-
     recordId = record["id"]
     recordFields = record["fields"]
     fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
@@ -428,34 +412,58 @@ def startProcessing():
     return jsonify({"status": 200, "message": "Processing started!!"})
 
 
+@celery.task()
+def downloadSingleVideo(processedVideos, data):
+    videoUrl = data["videoUrl"]
+    videoSpec = data["videoSpec"]
+    uuidString = data["taskId"]
+
+    videoSpec["VariantId"] = "Processed"
+
+    fileName = downloadVideo(videoUrl, processedVideos, uuidString)
+    processVideo(processedVideos, fileName, videoSpec)
+
+
 @app.route('/processSingleVideo', methods=['POST'])
 def processSingleVideo():
 
     processedVideos = "ProcessSingleVideo"
     checkDir(processedVideos)
-    removeFiles(processedVideos)
 
     data = request.get_json()
+    taskId = data.get("taskId")
 
-    videoUrl = data["videoUrl"]
-    videoSpec = data["videoSpec"]
+    if taskId is not None:
+        taskResult = AsyncResult(taskId)
+        status = taskResult.status
+        if status == "SUCCESS":
+            filePath = f"{processedVideos}/{taskId}_Processed.mov"
+            if not os.path.exists(filePath):
+                return "Error processing. Ask developer :)"
 
-    if videoSpec is None:
-        return jsonify("Invalid arguments"), 400
+            @after_this_request
+            def removeFile(response):
+                try:
+                    os.remove(filePath)
+                    print(f"File removed: {filePath}")
+                except Exception as error:
+                    print(f"Error removing file: {error}")
+                return response
+            return send_file(filePath, mimetype='video/mp4')
 
-    uuidString = str(uuid.uuid4())
+        elif status == "FAILURE":
+            return "Error processing. Ask developer :)"
+        elif status == "PENDING":
+            return "Processing in progress. Please wait :)"
+        else:
+            return "Unexpected behaviour. Please wait :)"
 
-    videoSpec["VariantId"] = "TestVariant"
+    uuId = str(uuid.uuid4())
+    data["taskId"] = uuId
 
-    fileName = downloadVideo(videoUrl, processedVideos, uuidString)
-    processVideo(processedVideos, fileName, videoSpec)
-
-    filePath = f"{processedVideos}/{uuidString}_{videoSpec['VariantId']}.mov"
-    print(filePath)
-    if not os.path.exists(filePath):
-        return "Error processing. Ask developer :)"
-
-    return send_file(filePath, mimetype='video/mp4')
+    task = downloadSingleVideo.apply_async(args = [processedVideos, data], task_id = uuId)
+    taskId = task.id
+    return taskId
 
 
 if __name__ == "__main__":

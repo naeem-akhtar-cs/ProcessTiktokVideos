@@ -406,24 +406,19 @@ def processVideoTask(record, processedVideos, processingSpecs):
 
 @app.route('/')
 def startProcessing():
-    print("Request received")
     processedVideos = "ProcessedVideos"
 
     checkDir(processedVideos)
     removeFiles(processedVideos)
 
     processingSpecs = getProcessingSpecs()
-    print(f"Test: {processingSpecs}")
 
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
         data = getAirtableRecords(offset)
-        print(f"This is all data: {data}")
         records = data["records"]
         offset = data["offset"]
-
-        print(f"Retrieved: {len(records)}")
 
         if records:
             for record in records:

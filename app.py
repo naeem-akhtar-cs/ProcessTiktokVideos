@@ -417,8 +417,9 @@ def startProcessing():
     while offset is not None or firstRequest:
         processingSpecs = getProcessingSpecs()
         print(f"Test: {processingSpecs}")
-        
+
         data = getAirtableRecords(offset)
+        print(f"This is all data: {data}")
         records = data["records"]
         offset = data["offset"]
 

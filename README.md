@@ -8,6 +8,6 @@ docker-compose down && docker-compose build && docker-compose up -d && docker-co
 docker-compose logs
 docker-compose logs -f
 
-
 # TODO
 1. Quality of video
+2. Process single video throws error for long videos due to timeout

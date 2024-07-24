@@ -412,12 +412,12 @@ def startProcessing():
     checkDir(processedVideos)
     removeFiles(processedVideos)
 
+    processingSpecs = getProcessingSpecs()
+    print(f"Test: {processingSpecs}")
+
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        processingSpecs = getProcessingSpecs()
-        print(f"Test: {processingSpecs}")
-
         data = getAirtableRecords(offset)
         print(f"This is all data: {data}")
         records = data["records"]

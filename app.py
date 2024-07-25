@@ -217,8 +217,10 @@ def processVideo(processedVideos, fileName, processingSpecs):
     }
 
     videoDimensions = getVideoDimension(f"{processedVideos}/{fileName}.mp4")
-    bitrate = getVideoBitrate(f"{processedVideos}/{fileName}.mp4")
-    bitrateKbps = f"{bitrate // 1000}k"
+    # bitrate = getVideoBitrate(f"{processedVideos}/{fileName}.mp4")
+    # print(bitrate)
+    # bitrateKbps = f"{(bitrate) // 1000}k"
+    # print(bitrateKbps)
 
     angleRadians = math.radians(processingSpecs["RotationAngle"])
 
@@ -248,10 +250,13 @@ def processVideo(processedVideos, fileName, processingSpecs):
     ffmpegCommand = [
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'{mirrorCommand}rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]},eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
+        "-vf", f'{mirrorCommand}rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]}:flags=lanczos,eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
         "-c:v", "libx264",
-        "-b:v", bitrateKbps,
-        "-c:a", "copy",
+        "-preset", "slow",
+        "-crf", "18",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart"
     ]
 
     for key, value in metadata.items():

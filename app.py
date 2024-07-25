@@ -422,6 +422,8 @@ def downloadSingleVideo(processedVideos, data):
 
     fileName = downloadVideo(videoUrl, processedVideos, uuidString)
     processVideo(processedVideos, fileName, videoSpec)
+    originalFilePath = f"{processedVideos}/{fileName}.mp4"
+    removeFile(originalFilePath)
 
 
 @app.route('/processSingleVideo', methods=['POST'])

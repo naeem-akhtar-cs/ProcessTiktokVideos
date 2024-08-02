@@ -53,7 +53,7 @@ This application requires some technical setup and is designed to run on a serve
 - Ensure you have proper permissions for accessing and modifying data in Airtable and Google Drive.
 - Video processing can be resource-intensive, so ensure your server has adequate capacity.
 
-For any technical issues or advanced configuration, please consult with a developer or refer to the documentation of the libraries used in this project.
+For any technical issues or advanced configuration, please consult with the developer or refer to the documentation of the libraries used in this project.
 
 ## How to Run the Application
 

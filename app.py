@@ -21,7 +21,7 @@ AIRTABLE_SPECS_TABLE_ID = os.getenv("AIRTABLE_SPECS_TABLE_ID")
 AIRTABLE_VIEW_ID = os.getenv("AIRTABLE_VIEW_ID")
 AIRTABLE_TABLE_ID_DRIVE = os.getenv("AIRTABLE_TABLE_ID_DRIVE")
 
-GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+# GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 baseUrl = "https://api.airtable.com/v0"
 driveDownloadBaseUrl = "https://drive.google.com/uc?export=download&id="
@@ -359,6 +359,7 @@ def getProcessingSpecs():
 def processVideoTask(record, processedVideos, processingSpecs):
     recordId = record["id"]
     recordFields = record["fields"]
+    variationFolderId = recordFields["drive folder Variations (from Model)"][0]
     fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     variantsList = []
@@ -366,7 +367,7 @@ def processVideoTask(record, processedVideos, processingSpecs):
         processVideo(processedVideos, fileName, specs)
 
         randomNumber = random.randint(1000, 9999)
-        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", GOOGLE_DRIVE_FOLDER_ID)
+        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
 
         variant = {
             "variantId": specs["VariantId"],
@@ -380,13 +381,14 @@ def processVideoTask(record, processedVideos, processingSpecs):
         "recordId": recordId,
         "tiktokUrl": record["fields"]["Video URL"],
         "soundUrl": record["fields"]["short sound url"],
-        "variantsList": variantsList
+        "variantsList": variantsList,
+        "DriveId": variationFolderId
     }
 
     addDataToAirTable(newRecordData)
-    status = updateRecordStatus({"recordId": recordId})
-    if not status:
-        print(f"Could not update status in linked table for record: {recordId}")
+    # status = updateRecordStatus({"recordId": recordId})
+    # if not status:
+    #     print(f"Could not update status in linked table for record: {recordId}")
 
     for variant in variantsList:
         filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"

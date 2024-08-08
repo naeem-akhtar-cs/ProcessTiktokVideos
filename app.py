@@ -170,16 +170,6 @@ def uploadToDrive(filePath, fileName, folderId):
 
     service = build("drive", "v3", credentials=credentials)
 
-    about = service.about().get(fields="storageQuota").execute()
-    quota = about['storageQuota']
-
-    used = int(quota['usage']) / (1024 * 1024 * 1024)
-    total = int(quota['limit']) / (1024 * 1024 * 1024)
-    
-    print(f"Used: {used}")
-    print(f"Total: {total}")
-
-
     media = MediaFileUpload(filePath, resumable=True)
 
     fileMetadata = {"name": fileName, "parents": [folderId]}

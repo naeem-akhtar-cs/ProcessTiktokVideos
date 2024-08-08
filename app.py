@@ -386,9 +386,9 @@ def processVideoTask(record, processedVideos, processingSpecs):
     }
 
     addDataToAirTable(newRecordData)
-    # status = updateRecordStatus({"recordId": recordId})
-    # if not status:
-    #     print(f"Could not update status in linked table for record: {recordId}")
+    status = updateRecordStatus({"recordId": recordId})
+    if not status:
+        print(f"Could not update status in linked table for record: {recordId}")
 
     for variant in variantsList:
         filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"

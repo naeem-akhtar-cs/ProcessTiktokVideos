@@ -84,11 +84,11 @@ def getAirtableRecords(offset, tableId, viewId, filterColumnName):
     except requests.exceptions.HTTPError as e:
         print(f"HTTP Error: {e}")
         print(f"Response content: {response.text}")
-        return []
+        return {}
 
     except requests.exceptions.RequestException as e:
         print(f"Request Exception: {e}")
-        return []
+        return {}
 
 
 def downloadVideo(videoUrl, folderName, recordId):

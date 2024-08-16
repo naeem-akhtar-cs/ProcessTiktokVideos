@@ -409,7 +409,7 @@ def startProcessing():
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, filterColumnName = "Video Processed")
+        data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, "Video Processed")
         records = data["records"]
         offset = data["offset"]
 
@@ -636,7 +636,7 @@ def splitVideos():
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, longFormatTableId, AIRTABLE_LONG_FORMAT_VIEW_ID, checkColumnName = "Processed") # Getting data of long format videos
+        data = getAirtableRecords(offset, longFormatTableId, AIRTABLE_LONG_FORMAT_VIEW_ID, "Processed") # Getting data of long format videos
         records = data["records"]
         offset = data["offset"]
 

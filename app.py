@@ -532,7 +532,7 @@ def splitVideo(folderName, fileName, splitLength):
 
 
 def updateSplitRecordStatus(recordId):
-    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_LONG_FORMAT_TABLE_ID}/{recordId}"
+    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{longFormatTableId}/{recordId}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", 'Content-Type': 'application/json',}
 
     payload = json.dumps({

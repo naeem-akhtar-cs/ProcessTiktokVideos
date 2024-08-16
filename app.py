@@ -638,9 +638,8 @@ def splitVideos():
     firstRequest = True
     while offset is not None or firstRequest:
         data = getAirtableRecords(offset, longFormatTableId, AIRTABLE_LONG_FORMAT_VIEW_ID, "Processed") # Getting data of long format videos
-        print(json.dumps(data))
-        records = data["records"]
-        offset = data["offset"]
+        records = data.get("records")
+        offset = data.get("offset")
 
         if records:
             for record in records:

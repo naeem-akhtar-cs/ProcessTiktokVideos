@@ -410,9 +410,8 @@ def startProcessing():
     firstRequest = True
     while offset is not None or firstRequest:
         data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, "Video Processed")
-        print(json.dumps(data))
-        records = data["records"]
-        offset = data["offset"]
+        records = data.get("records")
+        offset = data.get("offset")
 
         if records:
             for record in records:

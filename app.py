@@ -538,7 +538,7 @@ def splitVideo(folderName, fileName, splitLength):
 
 
 def updateSplitRecordStatus(recordId):
-    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{longFormatTableId}/{recordId}"
+    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_LONG_FORMAT_TABLE_ID}/{recordId}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", 'Content-Type': 'application/json',}
 
     payload = json.dumps({
@@ -635,12 +635,11 @@ def splitVideos():
     processedVideos = "SplitVideos"
 
     checkDir(processedVideos)
-    longFormatTableId = f"{AIRTABLE_LONG_FORMAT_TABLE_ID}"
 
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, longFormatTableId, AIRTABLE_LONG_FORMAT_VIEW_ID, "Processed") # Getting data of long format videos
+        data = getAirtableRecords(offset, AIRTABLE_LONG_FORMAT_TABLE_ID, AIRTABLE_LONG_FORMAT_VIEW_ID, "Processed") # Getting data of long format videos
         records = data.get("records")
         offset = data.get("offset")
 

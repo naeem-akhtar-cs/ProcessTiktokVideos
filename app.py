@@ -1,4 +1,4 @@
-import requests, json, subprocess, os, math, random, uuid
+import requests, json, subprocess, os, math, random, uuid, io
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaIoBaseDownload
 
 from flask import Flask, request, jsonify, send_file, after_this_request, make_response
 from celery import Celery

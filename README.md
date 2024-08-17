@@ -63,3 +63,6 @@ After setting up the environment and installing all requirements, follow these s
 
 ```docker-compose logs```
 ```docker-compose logs -f```
+
+http://51.20.77.85/
+https://airtable.com/create/tokens

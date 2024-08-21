@@ -243,32 +243,6 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
     return frame
 
 
-# def deleteVideoPixels(folderName, fileName):
-#     pixelDensity = 0.1
-    
-#     inputVideo = f"{folderName}/{fileName}.mov"
-#     outputVideo = f"{folderName}/{fileName}_pixels.mov"
-
-#     w, h = getVideoDimensions(inputVideo)
-#     pixels = [(random.randint(0, w-1), random.randint(0, h-1)) for _ in range(int(w * h * pixelDensity))]
-    
-#     with open("pixel_map.txt", "w") as f:
-#         for x, y in pixels:
-#             f.write(f"{x},{y}\n")
-    
-#     command = f"ffmpeg -i {inputVideo} -filter_complex \"[0:v]drawbox=x=(if(eq(mod(rand(1,10000),10),0),rand(0,{w}-1),NAN)):y=(if(eq(mod(rand(1,10000),10),0),rand(0,{h}-1),NAN)):w=1:h=1:c=black@0.5,[outv]\" -c:a copy {outputVideo}"
-#     os.system(command)
-    
-#     os.remove("pixel_map.txt")
-
-
-# def getVideoDimensions(video_file):
-#     command = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {video_file}"
-#     output = os.popen(command).read().strip()
-#     width, height = map(int, output.split("x"))
-#     return width, height
-
-
 def processVideo(processedVideos, fileName, processingSpecs):
     locationName, locationIso6709 = random.choice(list(locations.items()))
 

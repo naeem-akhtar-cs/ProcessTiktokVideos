@@ -1,16 +1,20 @@
 import requests, json, subprocess, os, math, random, uuid, io
+
+import cv2
+import numpy as np
+
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from googleapiclient.http import MediaIoBaseDownload
+# from googleapiclient.discovery import build
+# from googleapiclient.http import MediaFileUpload
+# from googleapiclient.http import MediaIoBaseDownload
 
 from flask import Flask, request, jsonify, send_file, after_this_request, make_response
-from celery import Celery
-from celery.result import AsyncResult
+# from celery import Celery
+# from celery.result import AsyncResult
 
 app = Flask(__name__)
 
@@ -45,21 +49,21 @@ locations = {
     "San Jose": "+37.3382-121.8863/",
 }
 
-def make_celery(app):
-    celery = Celery(
-        app.import_name,
-        backend=app.config['result_backend'],
-        broker=app.config['CELERY_BROKER_URL']
-    )
-    celery.conf.update(app.config)
-    return celery
+# def make_celery(app):
+#     celery = Celery(
+#         app.import_name,
+#         backend=app.config['result_backend'],
+#         broker=app.config['CELERY_BROKER_URL']
+#     )
+#     celery.conf.update(app.config)
+#     return celery
 
 app.config.update(
     CELERY_BROKER_URL='redis://redis:6379/0',
     result_backend='redis://redis:6379/0'
 )
 
-celery = make_celery(app)
+# celery = make_celery(app)
 
 def getAirtableRecords(offset, tableId, viewId, filterColumnName):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{tableId}"
@@ -202,6 +206,69 @@ def getVideoBitrate(filePath):
     return int(data["streams"][0]["bit_rate"])
 
 
+def deleteRandomPixels(folderName, fileName):
+    inputVideo = f"{folderName}/{fileName}.mov"
+    outputVideo = f"{folderName}/{fileName}_pixels.mov"
+
+    cap = cv2.VideoCapture(inputVideo)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    out = cv2.VideoWriter(outputVideo, fourcc, fps, (frameWidth, frameHeight))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Delete random pixels
+        frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01)
+
+        out.write(frame)
+
+    cap.release()
+    out.release()
+
+    return f"{fileName}_pixels.mov"
+
+def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
+    totalPixels = frameHeight * frameWidth
+    numPixelsToDelete = int(totalPixels * percentage)
+
+    for _ in range(numPixelsToDelete):
+        x = random.randint(0, frameWidth - 1)
+        y = random.randint(0, frameHeight - 1)
+        frame[y, x] = [0, 0, 0]
+    return frame
+
+
+# def deleteVideoPixels(folderName, fileName):
+#     pixelDensity = 0.1
+    
+#     inputVideo = f"{folderName}/{fileName}.mov"
+#     outputVideo = f"{folderName}/{fileName}_pixels.mov"
+
+#     w, h = getVideoDimensions(inputVideo)
+#     pixels = [(random.randint(0, w-1), random.randint(0, h-1)) for _ in range(int(w * h * pixelDensity))]
+    
+#     with open("pixel_map.txt", "w") as f:
+#         for x, y in pixels:
+#             f.write(f"{x},{y}\n")
+    
+#     command = f"ffmpeg -i {inputVideo} -filter_complex \"[0:v]drawbox=x=(if(eq(mod(rand(1,10000),10),0),rand(0,{w}-1),NAN)):y=(if(eq(mod(rand(1,10000),10),0),rand(0,{h}-1),NAN)):w=1:h=1:c=black@0.5,[outv]\" -c:a copy {outputVideo}"
+#     os.system(command)
+    
+#     os.remove("pixel_map.txt")
+
+
+# def getVideoDimensions(video_file):
+#     command = f"ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 {video_file}"
+#     output = os.popen(command).read().strip()
+#     width, height = map(int, output.split("x"))
+#     return width, height
+
+
 def processVideo(processedVideos, fileName, processingSpecs):
     locationName, locationIso6709 = random.choice(list(locations.items()))
 
@@ -264,13 +331,14 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "-b:a", "192k",
         "-movflags", "+faststart"
     ]
-
     for key, value in metadata.items():
         ffmpegCommand.extend(["-metadata", f"{key}={value}"])
-
+    
     ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
-
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
+
+    fileName = f"{fileName}_{processingSpecs['VariantId']}"
+    deleteRandomPixels(processedVideos, fileName)
 
 
 def addDataToAirTable(newRecordData):
@@ -361,7 +429,7 @@ def getProcessingSpecs():
         print(e)
 
 
-@celery.task()
+# @celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
     recordId = record["id"]
     recordFields = record["fields"]
@@ -392,9 +460,9 @@ def processVideoTask(record, processedVideos, processingSpecs):
     }
 
     addDataToAirTable(newRecordData)
-    status = updateRecordStatus({"recordId": recordId})
-    if not status:
-        print(f"Could not update status in linked table for record: {recordId}")
+    # status = updateRecordStatus({"recordId": recordId})
+    # if not status:
+    #     print(f"Could not update status in linked table for record: {recordId}")
 
     for variant in variantsList:
         filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
@@ -419,13 +487,14 @@ def startProcessing():
 
         if records:
             for record in records:
-                processVideoTask.delay(record, processedVideos, processingSpecs)
+                # processVideoTask.delay(record, processedVideos, processingSpecs)
+                processVideoTask(record, processedVideos, processingSpecs)
         firstRequest = False
 
     return jsonify({"status": 200, "message": "Processing started!!"})
 
 
-@celery.task()
+# @celery.task()
 def downloadSingleVideo(processedVideos, data):
     videoUrl = data["videoUrl"]
     videoSpec = data["videoSpec"]
@@ -589,7 +658,7 @@ def addSplitDataToAirTable(newRecord):
         return []
 
 
-@celery.task()
+# @celery.task()
 def processLongVideos(record, processedVideos):
     recordId = record["id"]
     recordFields = record["fields"]

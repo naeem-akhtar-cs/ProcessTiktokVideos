@@ -207,30 +207,61 @@ def getVideoBitrate(filePath):
 
 
 def deleteRandomPixels(folderName, fileName):
-    inputVideo = f"{folderName}/{fileName}.mov"
-    outputVideo = f"{folderName}/{fileName}_pixels.mov"
+    # Paths for input and output videos
+    inputVideo = f"{folderName}/{fileName}.mp4"
+    tempVideoWithoutAudio = f"{folderName}/{fileName}_no_audio.mp4"
+    outputVideo = f"{folderName}/{fileName}_pixels.mp4"
 
+    # Open input video using OpenCV
     cap = cv2.VideoCapture(inputVideo)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    
+    # Get original video properties
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    out = cv2.VideoWriter(outputVideo, fourcc, fps, (frameWidth, frameHeight))
-
+    
+    # Open a VideoWriter for output
+    out = cv2.VideoWriter(tempVideoWithoutAudio, fourcc, fps, (frameWidth, frameHeight))
+    
+    # Process the video frame by frame
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Delete random pixels
+        # Delete random pixels in the frame
         frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01)
 
+        # Write the processed frame to the output video
         out.write(frame)
 
+    # Release resources
     cap.release()
     out.release()
 
-    return f"{fileName}_pixels.mov"
+    # Use ffmpeg to merge the original audio with the processed video
+    mergeAudioWithVideo(inputVideo, tempVideoWithoutAudio, outputVideo)
+
+    return f"{fileName}_pixels"
+
+
+def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
+    # Command to extract the audio from the original video and merge it with the processed video
+    ffmpegCommand = [
+        "ffmpeg",
+        "-i", processedVideo,          # Processed video without audio
+        "-i", originalVideo,           # Original video to extract audio from
+        "-c:v", "copy",                # Copy video codec without re-encoding
+        "-c:a", "aac",                 # Encode audio as AAC
+        "-map", "0:v:0",               # Map video from the processed video
+        "-map", "1:a:0",               # Map audio from the original video
+        "-shortest",                   # Stop when the shortest stream ends
+        outputVideo
+    ]
+
+    subprocess.run(ffmpegCommand, check=True)
+
 
 def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
     totalPixels = frameHeight * frameWidth
@@ -239,8 +270,21 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
     for _ in range(numPixelsToDelete):
         x = random.randint(0, frameWidth - 1)
         y = random.randint(0, frameHeight - 1)
-        frame[y, x] = [0, 0, 0]
+        averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
+        frame[y, x] = averageColor
     return frame
+
+
+def getAverageColor(frame, x, y, frameHeight, frameWidth):
+    xMin = max(0, x - 1)
+    xMax = min(frameWidth - 1, x + 1)
+    yMin = max(0, y - 1)
+    yMax = min(frameHeight - 1, y + 1)
+    
+    neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
+    averageColor = np.mean(neighboringPixels, axis=(0, 1)).astype(int)
+    
+    return averageColor
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
@@ -248,6 +292,8 @@ def processVideo(processedVideos, fileName, processingSpecs):
 
     randomDate = datetime.now() - timedelta(hours=random.randint(0, 24))
     dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
+
+    fileName = deleteRandomPixels(processedVideos, fileName)
 
     metadata = {
         "make": "Apple",
@@ -310,9 +356,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
     
     ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
-
-    fileName = f"{fileName}_{processingSpecs['VariantId']}"
-    deleteRandomPixels(processedVideos, fileName)
+    return fileName
 
 
 def addDataToAirTable(newRecordData):
@@ -411,8 +455,8 @@ def processVideoTask(record, processedVideos, processingSpecs):
     fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     variantsList = []
-    for specs in processingSpecs:
-        processVideo(processedVideos, fileName, specs)
+    for specs in processingSpecs[2:]:
+        fileName = processVideo(processedVideos, fileName, specs)
 
         randomNumber = random.randint(1000, 9999)
         fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)

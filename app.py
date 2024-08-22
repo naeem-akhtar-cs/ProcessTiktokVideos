@@ -207,56 +207,42 @@ def getVideoBitrate(filePath):
 
 
 def deleteRandomPixels(folderName, fileName):
-    # Paths for input and output videos
     inputVideo = f"{folderName}/{fileName}.mp4"
     tempVideoWithoutAudio = f"{folderName}/{fileName}_no_audio.mp4"
     outputVideo = f"{folderName}/{fileName}_pixels.mp4"
 
-    # Open input video using OpenCV
     cap = cv2.VideoCapture(inputVideo)
     
-    # Get original video properties
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     
-    # Open a VideoWriter for output
     out = cv2.VideoWriter(tempVideoWithoutAudio, fourcc, fps, (frameWidth, frameHeight))
     
-    # Process the video frame by frame
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-
-        # Delete random pixels in the frame
         frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01)
-
-        # Write the processed frame to the output video
         out.write(frame)
-
-    # Release resources
     cap.release()
     out.release()
-
-    # Use ffmpeg to merge the original audio with the processed video
     mergeAudioWithVideo(inputVideo, tempVideoWithoutAudio, outputVideo)
 
     return f"{fileName}_pixels"
 
 
 def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
-    # Command to extract the audio from the original video and merge it with the processed video
     ffmpegCommand = [
         "ffmpeg",
-        "-i", processedVideo,          # Processed video without audio
-        "-i", originalVideo,           # Original video to extract audio from
-        "-c:v", "copy",                # Copy video codec without re-encoding
-        "-c:a", "aac",                 # Encode audio as AAC
-        "-map", "0:v:0",               # Map video from the processed video
-        "-map", "1:a:0",               # Map audio from the original video
-        "-shortest",                   # Stop when the shortest stream ends
+        "-i", processedVideo,
+        "-i", originalVideo,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-shortest",
         outputVideo
     ]
 
@@ -270,9 +256,17 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
     for _ in range(numPixelsToDelete):
         x = random.randint(0, frameWidth - 1)
         y = random.randint(0, frameHeight - 1)
-        averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
+        averageColor = modifyPixelColor(frame, x, y, frameHeight, frameWidth)
         frame[y, x] = averageColor
     return frame
+
+
+def modifyPixelColor(frame, x, y, frameHeight, frameWidth):
+    originalColor = frame[y, x]
+    randomAdjustment = np.random.randint(-10, 11, size=3)
+    modifiedColor = originalColor + randomAdjustment
+    modifiedColor = np.clip(modifiedColor, 0, 255)
+    return modifiedColor
 
 
 def getAverageColor(frame, x, y, frameHeight, frameWidth):
@@ -280,11 +274,36 @@ def getAverageColor(frame, x, y, frameHeight, frameWidth):
     xMax = min(frameWidth - 1, x + 1)
     yMin = max(0, y - 1)
     yMax = min(frameHeight - 1, y + 1)
-    
     neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
     averageColor = np.mean(neighboringPixels, axis=(0, 1)).astype(int)
-    
     return averageColor
+
+
+def getMedianColor(frame, x, y, frameHeight, frameWidth):
+    xMin = max(0, x - 1)
+    xMax = min(frameWidth - 1, x + 1)
+    yMin = max(0, y - 1)
+    yMax = min(frameHeight - 1, y + 1)
+    neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
+    medianColor = np.median(neighboringPixels, axis=(0, 1)).astype(int)
+    return medianColor
+
+
+def getWeightedAverageColor(frame, x, y, frameHeight, frameWidth):
+    xMin = max(0, x - 1)
+    xMax = min(frameWidth - 1, x + 1)
+    yMin = max(0, y - 1)
+    yMax = min(frameHeight - 1, y + 1)
+    neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
+    weights = np.array([
+        [1, 2, 1],
+        [2, 4, 2],
+        [1, 2, 1]
+    ])
+    weights = weights[(yMin - y + 1):(yMax - y + 2), (xMin - x + 1):(xMax - x + 2)]
+    weightedSum = np.tensordot(neighboringPixels, weights, axes=((0, 1), (0, 1)))
+    weightedAverageColor = (weightedSum / np.sum(weights)).astype(int)
+    return weightedAverageColor
 
 
 def processVideo(processedVideos, fileName, processingSpecs):

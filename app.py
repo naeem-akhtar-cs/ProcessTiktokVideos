@@ -224,7 +224,9 @@ def deleteRandomPixels(folderName, fileName):
         ret, frame = cap.read()
         if not ret:
             break
-        frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01)
+
+        percentage = random.uniform(0.01, 0.02)
+        frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage)
         out.write(frame)
     cap.release()
     out.release()
@@ -256,11 +258,21 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
     for _ in range(numPixelsToDelete):
         x = random.randint(0, frameWidth - 1)
         y = random.randint(0, frameHeight - 1)
-        averageColor = modifyPixelColor(frame, x, y, frameHeight, frameWidth)
+
+        algoId = random.randint(1, 3)
+
+        if algoId == 1:
+            averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
+        elif algoId == 2:
+            averageColor = getMedianColor(frame, x, y, frameHeight, frameWidth)
+        elif algoId == 3:
+            averageColor = getWeightedAverageColor(frame, x, y, frameHeight, frameWidth)
+
         frame[y, x] = averageColor
     return frame
 
 
+# Detected on upload - Not working
 def modifyPixelColor(frame, x, y, frameHeight, frameWidth):
     originalColor = frame[y, x]
     randomAdjustment = np.random.randint(-10, 11, size=3)
@@ -375,6 +387,9 @@ def processVideo(processedVideos, fileName, processingSpecs):
     
     ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
     subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
+
+    
+
     return fileName
 
 
@@ -471,11 +486,11 @@ def processVideoTask(record, processedVideos, processingSpecs):
     recordId = record["id"]
     recordFields = record["fields"]
     variationFolderId = recordFields["drive folder Variations (from Model)"][0]
-    fileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
+    originalFileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     variantsList = []
-    for specs in processingSpecs[2:]:
-        fileName = processVideo(processedVideos, fileName, specs)
+    for specs in processingSpecs:
+        fileName = processVideo(processedVideos, originalFileName, specs)
 
         randomNumber = random.randint(1000, 9999)
         fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)

@@ -217,7 +217,10 @@ def deleteRandomPixels(folderName, fileName):
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    
+
+    algoId = random.randint(1, 3)
+    percentage = 0.01
+
     out = cv2.VideoWriter(tempVideoWithoutAudio, fourcc, fps, (frameWidth, frameHeight))
     
     while cap.isOpened():
@@ -225,8 +228,7 @@ def deleteRandomPixels(folderName, fileName):
         if not ret:
             break
 
-        percentage = random.uniform(0.01, 0.02)
-        frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage)
+        frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, algoId, percentage)
         out.write(frame)
     cap.release()
     out.release()
@@ -251,15 +253,13 @@ def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
     subprocess.run(ffmpegCommand, check=True)
 
 
-def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, percentage=0.01):
+def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, algoId, percentage=0.01):
     totalPixels = frameHeight * frameWidth
     numPixelsToDelete = int(totalPixels * percentage)
 
     for _ in range(numPixelsToDelete):
         x = random.randint(0, frameWidth - 1)
         y = random.randint(0, frameHeight - 1)
-
-        algoId = random.randint(1, 3)
 
         if algoId == 1:
             averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
@@ -324,7 +324,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
     randomDate = datetime.now() - timedelta(hours=random.randint(0, 24))
     dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
 
-    fileName = deleteRandomPixels(processedVideos, fileName)
+    # fileName = deleteRandomPixels(processedVideos, fileName)
 
     metadata = {
         "make": "Apple",
@@ -371,10 +371,33 @@ def processVideo(processedVideos, fileName, processingSpecs):
     if mirrorVideo is not None and mirrorVideo == True:
         mirrorCommand = "hflip,"
 
+    zoomStartTime = 2  # Start zoom at 2 seconds
+    zoomEndTime = 4  # End zoom at 5 seconds (3 seconds of zooming)
+    initialZoom = 1.0  # Initial scale factor
+    finalZoom = 0.5  # Final scale factor (half resolution)
+
+    # zoomEffect = f"zoompan=z=pzoom+0.01:x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
+    # zoomEffect = f"zoompan=z='if(gte(time,ld(1)+5),st(1,time)*0,if(ld(1),if(lt(time,ld(1)+3),2,1)))':d=1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):fps=30"
+    zoomEffect = f"zoompan=z='if(lt(time,2),1+(time/2),if(lt(time,3),2,if(lt(time,5),2-(time-3)/2,1)))':d=1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
+
+    # zoomEffect = (
+    #     f"zoompan=z='if(lte(on,1800),pzoom+0.01,pzoom)':"
+    #     f"x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':"
+    #     f"d=1:s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
+    # )
+
+    # zoomEffect = (
+    #     f"zoompan=z='if(gte(t,{zoomStartTime}),"
+    #     f"{initialZoom}+({finalZoom}-{initialZoom})*(t-{zoomStartTime})/{zoomEndTime - zoomStartTime},"
+    #     f"{initialZoom})':"
+    #     f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+    #     f"d=1:s={videoDimensions['width']}x{videoDimensions['height']},"
+    # )
+
     ffmpegCommand = [
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'{mirrorCommand}rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]}:flags=lanczos,eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
+        "-vf", f'{mirrorCommand}{zoomEffect},rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]}:flags=lanczos,eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
         "-c:v", "libx264",
         "-preset", "slow",
         "-crf", "18",
@@ -384,11 +407,14 @@ def processVideo(processedVideos, fileName, processingSpecs):
     ]
     for key, value in metadata.items():
         ffmpegCommand.extend(["-metadata", f"{key}={value}"])
-    
-    ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
-    subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
 
-    
+    ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
+
+    try:
+        subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        print("FFmpeg error:", e.stderr)
+        raise
 
     return fileName
 
@@ -492,16 +518,16 @@ def processVideoTask(record, processedVideos, processingSpecs):
     for specs in processingSpecs:
         fileName = processVideo(processedVideos, originalFileName, specs)
 
-        randomNumber = random.randint(1000, 9999)
-        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
+        # randomNumber = random.randint(1000, 9999)
+        # fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
 
-        variant = {
-            "variantId": specs["VariantId"],
-            "fileUrl": fileUrl,
-            "fileName": f"IMG_{randomNumber}.MOV",
-            "randomNumber": randomNumber
-        }
-        variantsList.append(variant)
+        # variant = {
+        #     "variantId": specs["VariantId"],
+        #     "fileUrl": fileUrl,
+        #     "fileName": f"IMG_{randomNumber}.MOV",
+        #     "randomNumber": randomNumber
+        # }
+        # variantsList.append(variant)
 
     newRecordData = {
         "recordId": recordId,

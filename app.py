@@ -8,13 +8,13 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from google.oauth2 import service_account
-# from googleapiclient.discovery import build
-# from googleapiclient.http import MediaFileUpload
-# from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaIoBaseDownload
 
 from flask import Flask, request, jsonify, send_file, after_this_request, make_response
-# from celery import Celery
-# from celery.result import AsyncResult
+from celery import Celery
+from celery.result import AsyncResult
 
 app = Flask(__name__)
 
@@ -49,21 +49,21 @@ locations = {
     "San Jose": "+37.3382-121.8863/",
 }
 
-# def make_celery(app):
-#     celery = Celery(
-#         app.import_name,
-#         backend=app.config['result_backend'],
-#         broker=app.config['CELERY_BROKER_URL']
-#     )
-#     celery.conf.update(app.config)
-#     return celery
+def make_celery(app):
+    celery = Celery(
+        app.import_name,
+        backend=app.config['result_backend'],
+        broker=app.config['CELERY_BROKER_URL']
+    )
+    celery.conf.update(app.config)
+    return celery
 
 app.config.update(
     CELERY_BROKER_URL='redis://redis:6379/0',
     result_backend='redis://redis:6379/0'
 )
 
-# celery = make_celery(app)
+celery = make_celery(app)
 
 def getAirtableRecords(offset, tableId, viewId, filterColumnName):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{tableId}"
@@ -140,7 +140,7 @@ def removeFile(filePath):
         print(f"Failed to delete {filePath}. Reason: {e}")
 
 
-def getVideoDimension(videPath):
+def getVideoInfo(videoPath):
     cmd = [
         "ffprobe",
         "-v",
@@ -150,9 +150,11 @@ def getVideoDimension(videPath):
         "-count_packets",
         "-show_entries",
         "stream=width,height",
+        "-show_entries",
+        "format=duration",
         "-of",
         "json",
-        videPath,
+        videoPath,
     ]
 
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -163,11 +165,12 @@ def getVideoDimension(videPath):
 
     data = json.loads(result.stdout)
 
-    if "streams" in data and len(data["streams"]) > 0:
+    if "streams" in data and len(data["streams"]) > 0 and "format" in data:
         stream = data["streams"][0]
         width = stream.get("width")
         height = stream.get("height")
-        return {"width": width, "height": height}
+        duration = int(float(data["format"].get("duration", 0)))
+        return {"width": width, "height": height, "duration": duration}
     else:
         return None
 
@@ -179,13 +182,9 @@ def uploadToDrive(filePath, fileName, folderId):
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
     service = build("drive", "v3", credentials=credentials)
-
     media = MediaFileUpload(filePath, resumable=True)
-
     fileMetadata = {"name": fileName, "parents": [folderId]}
-
-    file = service.files().create(body=fileMetadata, media_body=media, fields="id").execute()
-
+    file = service.files().create(body = fileMetadata, media_body = media, fields = "id").execute()
     fileUrl = driveDownloadBaseUrl + file.get("id")
     return fileUrl
 
@@ -202,11 +201,10 @@ def getVideoBitrate(filePath):
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     data = json.loads(result.stdout)
-
     return int(data["streams"][0]["bit_rate"])
 
 
-def deleteRandomPixels(folderName, fileName):
+def deleteRandomPixels(folderName, fileName, variantId):
     inputVideo = f"{folderName}/{fileName}.mp4"
     tempVideoWithoutAudio = f"{folderName}/{fileName}_no_audio.mp4"
     outputVideo = f"{folderName}/{fileName}_pixels.mp4"
@@ -218,11 +216,12 @@ def deleteRandomPixels(folderName, fileName):
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
 
-    algoId = random.randint(1, 3)
+    # algoId = random.randint(1, 3)
+    algoId = variantId
     percentage = 0.01
 
     out = cv2.VideoWriter(tempVideoWithoutAudio, fourcc, fps, (frameWidth, frameHeight))
-    
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -253,7 +252,7 @@ def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
     subprocess.run(ffmpegCommand, check=True)
 
 
-def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, algoId, percentage=0.01):
+def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, originalAlgoId, percentage=0.01):
     totalPixels = frameHeight * frameWidth
     numPixelsToDelete = int(totalPixels * percentage)
 
@@ -261,11 +260,16 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, algoId, percentage
         x = random.randint(0, frameWidth - 1)
         y = random.randint(0, frameHeight - 1)
 
+        if originalAlgoId == 2:
+            algoId = random.choice([1, 3, 4])
+        else:
+            algoId = originalAlgoId
+
         if algoId == 1:
             averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
-        elif algoId == 2:
-            averageColor = getMedianColor(frame, x, y, frameHeight, frameWidth)
         elif algoId == 3:
+            averageColor = getMedianColor(frame, x, y, frameHeight, frameWidth)
+        elif algoId == 4:
             averageColor = getWeightedAverageColor(frame, x, y, frameHeight, frameWidth)
 
         frame[y, x] = averageColor
@@ -324,7 +328,8 @@ def processVideo(processedVideos, fileName, processingSpecs):
     randomDate = datetime.now() - timedelta(hours=random.randint(0, 24))
     dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
 
-    # fileName = deleteRandomPixels(processedVideos, fileName)
+    variantId = processingSpecs["VariantId"]
+    fileName = deleteRandomPixels(processedVideos, fileName, variantId)
 
     metadata = {
         "make": "Apple",
@@ -340,7 +345,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "com.apple.quicktime.location.accuracy.horizontal": "6297.954794",
     }
 
-    videoDimensions = getVideoDimension(f"{processedVideos}/{fileName}.mp4")
+    videoDimensions = getVideoInfo(f"{processedVideos}/{fileName}.mp4")
     # bitrate = getVideoBitrate(f"{processedVideos}/{fileName}.mp4")
     # print(bitrate)
     # bitrateKbps = f"{(bitrate) // 1000}k"
@@ -371,33 +376,21 @@ def processVideo(processedVideos, fileName, processingSpecs):
     if mirrorVideo is not None and mirrorVideo == True:
         mirrorCommand = "hflip,"
 
-    zoomStartTime = 2  # Start zoom at 2 seconds
-    zoomEndTime = 4  # End zoom at 5 seconds (3 seconds of zooming)
-    initialZoom = 1.0  # Initial scale factor
-    finalZoom = 0.5  # Final scale factor (half resolution)
-
+    zoomEffect = ""
     # zoomEffect = f"zoompan=z=pzoom+0.01:x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
-    # zoomEffect = f"zoompan=z='if(gte(time,ld(1)+5),st(1,time)*0,if(ld(1),if(lt(time,ld(1)+3),2,1)))':d=1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):fps=30"
-    zoomEffect = f"zoompan=z='if(lt(time,2),1+(time/2),if(lt(time,3),2,if(lt(time,5),2-(time-3)/2,1)))':d=1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
-
-    # zoomEffect = (
-    #     f"zoompan=z='if(lte(on,1800),pzoom+0.01,pzoom)':"
-    #     f"x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':"
-    #     f"d=1:s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
-    # )
-
-    # zoomEffect = (
-    #     f"zoompan=z='if(gte(t,{zoomStartTime}),"
-    #     f"{initialZoom}+({finalZoom}-{initialZoom})*(t-{zoomStartTime})/{zoomEndTime - zoomStartTime},"
-    #     f"{initialZoom})':"
-    #     f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-    #     f"d=1:s={videoDimensions['width']}x{videoDimensions['height']},"
-    # )
+    if variantId == 3 or variantId ==  4:
+        startingPoint = random.randint(0, videoDimensions["duration"] - 5)
+        # zoomEffect = f"zoompan=z='if(lt(time,2),1+(time/2),if(lt(time,3),2,if(lt(time,5),2-(time-3)/2,1)))':d=1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
+        zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
+    elif variantId == 1:
+        zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
+    elif variantId != 2 and videoDimensions["duration"]  >= 5:
+        zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
 
     ffmpegCommand = [
         "ffmpeg",
         "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'{mirrorCommand}{zoomEffect},rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]}:flags=lanczos,eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
+        "-vf", f'{mirrorCommand}{zoomEffect}rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]}:flags=lanczos,eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
         "-c:v", "libx264",
         "-preset", "slow",
         "-crf", "18",
@@ -415,7 +408,6 @@ def processVideo(processedVideos, fileName, processingSpecs):
     except subprocess.CalledProcessError as e:
         print("FFmpeg error:", e.stderr)
         raise
-
     return fileName
 
 
@@ -507,7 +499,7 @@ def getProcessingSpecs():
         print(e)
 
 
-# @celery.task()
+@celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
     recordId = record["id"]
     recordFields = record["fields"]
@@ -518,16 +510,16 @@ def processVideoTask(record, processedVideos, processingSpecs):
     for specs in processingSpecs:
         fileName = processVideo(processedVideos, originalFileName, specs)
 
-        # randomNumber = random.randint(1000, 9999)
-        # fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
+        randomNumber = random.randint(1000, 9999)
+        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
 
-        # variant = {
-        #     "variantId": specs["VariantId"],
-        #     "fileUrl": fileUrl,
-        #     "fileName": f"IMG_{randomNumber}.MOV",
-        #     "randomNumber": randomNumber
-        # }
-        # variantsList.append(variant)
+        variant = {
+            "variantId": specs["VariantId"],
+            "fileUrl": fileUrl,
+            "fileName": f"IMG_{randomNumber}.MOV",
+            "randomNumber": randomNumber
+        }
+        variantsList.append(variant)
 
     newRecordData = {
         "recordId": recordId,
@@ -538,9 +530,9 @@ def processVideoTask(record, processedVideos, processingSpecs):
     }
 
     addDataToAirTable(newRecordData)
-    # status = updateRecordStatus({"recordId": recordId})
-    # if not status:
-    #     print(f"Could not update status in linked table for record: {recordId}")
+    status = updateRecordStatus({"recordId": recordId})
+    if not status:
+        print(f"Could not update status in linked table for record: {recordId}")
 
     for variant in variantsList:
         filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
@@ -565,14 +557,14 @@ def startProcessing():
 
         if records:
             for record in records:
-                # processVideoTask.delay(record, processedVideos, processingSpecs)
-                processVideoTask(record, processedVideos, processingSpecs)
+                processVideoTask.delay(record, processedVideos, processingSpecs)
+                # processVideoTask(record, processedVideos, processingSpecs)
         firstRequest = False
 
     return jsonify({"status": 200, "message": "Processing started!!"})
 
 
-# @celery.task()
+@celery.task()
 def downloadSingleVideo(processedVideos, data):
     videoUrl = data["videoUrl"]
     videoSpec = data["videoSpec"]
@@ -736,7 +728,7 @@ def addSplitDataToAirTable(newRecord):
         return []
 
 
-# @celery.task()
+@celery.task()
 def processLongVideos(record, processedVideos):
     recordId = record["id"]
     recordFields = record["fields"]
@@ -752,7 +744,12 @@ def processLongVideos(record, processedVideos):
 
     shortFormatFolder = record["fields"]["drive folder ShortFormat"][0]
     fileName = record["fields"]["Name"]
-    splitLength = float(SPLIT_VIDEO_LENGTH)
+
+    clipLength = record["fields"]["clip length"]
+    if clipLength is not None:
+        splitLength = int(clipLength)
+    else:
+        splitLength = float(SPLIT_VIDEO_LENGTH)
 
     downloadedFileName = downloadVideoAuth(processedVideos, fileId, fileName)
 

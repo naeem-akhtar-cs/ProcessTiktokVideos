@@ -5,5 +5,7 @@ creds.json
 __pycache__/
 .vscode/
 ProcessSingleVideo/
+SplitVideos/
 *.logs
 *.json
+.venv

@@ -232,7 +232,7 @@ def deleteRandomPixels(folderName, fileName, variantId):
     cap.release()
     out.release()
     mergeAudioWithVideo(inputVideo, tempVideoWithoutAudio, outputVideo)
-
+    removeFile(f"{tempVideoWithoutAudio}")
     return f"{fileName}_pixels"
 
 
@@ -408,6 +408,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
     except subprocess.CalledProcessError as e:
         print("FFmpeg error:", e.stderr)
         raise
+    removeFile(f"{processedVideos}/{fileName}.mp4")
     return fileName
 
 

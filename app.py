@@ -1,4 +1,4 @@
-import requests, json, subprocess, os, math, random, uuid, io, time, shutil
+import requests, json, subprocess, os, math, random, uuid, io, time, shutil, sys
 
 import cv2
 import numpy as np
@@ -210,7 +210,6 @@ def deleteRandomPixels(folderName, fileName, variantId):
     outputVideo = f"{folderName}/{fileName}_pixels.mp4"
 
     cap = cv2.VideoCapture(inputVideo)
-    
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -221,18 +220,15 @@ def deleteRandomPixels(folderName, fileName, variantId):
     percentage = 0.01
 
     out = cv2.VideoWriter(tempVideoWithoutAudio, fourcc, fps, (frameWidth, frameHeight))
-
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-
         frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, algoId, percentage)
         out.write(frame)
     cap.release()
     out.release()
     mergeAudioWithVideo(inputVideo, tempVideoWithoutAudio, outputVideo)
-    removeFile(f"{tempVideoWithoutAudio}")
     return f"{fileName}_pixels"
 
 
@@ -248,8 +244,8 @@ def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
         "-shortest",
         outputVideo
     ]
-
     subprocess.run(ffmpegCommand, check=True)
+    removeFile(f"{processedVideo}")
 
 
 def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, originalAlgoId, percentage=0.01):
@@ -331,7 +327,7 @@ def swapColumns(frame, startCol1, endCol1, startCol2, endCol2):
     return frame
 
 
-def cutVideoSides(processedVideos, fileName):
+def swapVideoSides(processedVideos, fileName):
     inputFilePath = f"{processedVideos}/{fileName}.mp4"
     cap = cv2.VideoCapture(inputFilePath)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -342,16 +338,25 @@ def cutVideoSides(processedVideos, fileName):
     outputFilePath = f"{processedVideos}/{fileName}_cut.mp4"
     out = cv2.VideoWriter(outputFilePath, fourcc, fps, (width, height))
 
+    colsToSwap = 20
+    startColLeft = int(width * 0.15) + colsToSwap
+    endColLeft = startColLeft + colsToSwap
+    startColRight = int(width * 0.85)
+    endColRight = startColRight + colsToSwap
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        frame = swapColumns(frame, 4, 8, 8, 12)
-        frame = swapColumns(frame, width - 12, width - 8, width - 8, width - 4)
+        # TODO Check width of video before swap
+        frame = swapColumns(frame, startColLeft, endColLeft, endColLeft, endColLeft + colsToSwap)
+        frame = swapColumns(frame, startColRight, endColRight, endColRight, endColRight + colsToSwap)
         out.write(frame)
     cap.release()
     out.release()
     cv2.destroyAllWindows()
+    outputVideoUpdated = f"{processedVideos}/{fileName}_cut_audio.mp4"
+    mergeAudioWithVideo(inputFilePath, outputFilePath, outputVideoUpdated)
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
@@ -361,7 +366,9 @@ def processVideo(processedVideos, fileName, processingSpecs):
     dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
 
     variantId = processingSpecs["VariantId"]
-    fileName = deleteRandomPixels(processedVideos, fileName, variantId)
+    # fileName = deleteRandomPixels(processedVideos, fileName, variantId)
+
+    fileName = "recUk02J1czaRqI6J_pixels"
 
     metadata = {
         "make": "Apple",
@@ -410,8 +417,8 @@ def processVideo(processedVideos, fileName, processingSpecs):
 
     zoomEffect = ""
     if variantId == 5:
-        cutVideoSides(processedVideos, fileName)
-    if variantId == 3 or variantId ==  4:
+        swapVideoSides(processedVideos, fileName)
+    elif variantId == 3 or variantId ==  4:
         startingPoint = random.randint(0, videoDimensions["duration"] - 5)
         zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
     elif variantId == 1:
@@ -576,8 +583,8 @@ def processVideoTask(record, processedVideos, processingSpecs):
 def startProcessing():
     processedVideos = "ProcessedVideos"
 
-    checkDir(processedVideos)
-    removeFiles(processedVideos)
+    # checkDir(processedVideos)
+    # removeFiles(processedVideos)
 
     processingSpecs = getProcessingSpecs()
 

@@ -1,4 +1,4 @@
-import requests, json, subprocess, os, math, random, uuid, io
+import requests, json, subprocess, os, math, random, uuid, io, time, shutil
 
 import cv2
 import numpy as np
@@ -271,6 +271,8 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, originalAlgoId, pe
             averageColor = getMedianColor(frame, x, y, frameHeight, frameWidth)
         elif algoId == 4:
             averageColor = getWeightedAverageColor(frame, x, y, frameHeight, frameWidth)
+        if algoId == 5:
+            averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
 
         frame[y, x] = averageColor
     return frame
@@ -320,6 +322,36 @@ def getWeightedAverageColor(frame, x, y, frameHeight, frameWidth):
     weightedSum = np.tensordot(neighboringPixels, weights, axes=((0, 1), (0, 1)))
     weightedAverageColor = (weightedSum / np.sum(weights)).astype(int)
     return weightedAverageColor
+
+
+def swapColumns(frame, startCol1, endCol1, startCol2, endCol2):
+    temp = frame[:, startCol1:endCol1].copy()
+    frame[:, startCol1:endCol1] = frame[:, startCol2:endCol2]
+    frame[:, startCol2:endCol2] = temp
+    return frame
+
+
+def cutVideoSides(processedVideos, fileName):
+    inputFilePath = f"{processedVideos}/{fileName}.mp4"
+    cap = cv2.VideoCapture(inputFilePath)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+
+    outputFilePath = f"{processedVideos}/{fileName}_cut.mp4"
+    out = cv2.VideoWriter(outputFilePath, fourcc, fps, (width, height))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = swapColumns(frame, 4, 8, 8, 12)
+        frame = swapColumns(frame, width - 12, width - 8, width - 8, width - 4)
+        out.write(frame)
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
@@ -377,10 +409,10 @@ def processVideo(processedVideos, fileName, processingSpecs):
         mirrorCommand = "hflip,"
 
     zoomEffect = ""
-    # zoomEffect = f"zoompan=z=pzoom+0.01:x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
+    if variantId == 5:
+        cutVideoSides(processedVideos, fileName)
     if variantId == 3 or variantId ==  4:
         startingPoint = random.randint(0, videoDimensions["duration"] - 5)
-        # zoomEffect = f"zoompan=z='if(lt(time,2),1+(time/2),if(lt(time,3),2,if(lt(time,5),2-(time-3)/2,1)))':d=1:x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):s={videoDimensions['width']}x{videoDimensions['height']}:fps=30"
         zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
     elif variantId == 1:
         zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
@@ -511,16 +543,16 @@ def processVideoTask(record, processedVideos, processingSpecs):
     for specs in processingSpecs:
         fileName = processVideo(processedVideos, originalFileName, specs)
 
-        randomNumber = random.randint(1000, 9999)
-        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
+        # randomNumber = random.randint(1000, 9999)
+        # fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
 
-        variant = {
-            "variantId": specs["VariantId"],
-            "fileUrl": fileUrl,
-            "fileName": f"IMG_{randomNumber}.MOV",
-            "randomNumber": randomNumber
-        }
-        variantsList.append(variant)
+        # variant = {
+        #     "variantId": specs["VariantId"],
+        #     "fileUrl": fileUrl,
+        #     "fileName": f"IMG_{randomNumber}.MOV",
+        #     "randomNumber": randomNumber
+        # }
+        # variantsList.append(variant)
 
     newRecordData = {
         "recordId": recordId,
@@ -530,14 +562,14 @@ def processVideoTask(record, processedVideos, processingSpecs):
         "DriveId": variationFolderId
     }
 
-    addDataToAirTable(newRecordData)
-    status = updateRecordStatus({"recordId": recordId})
-    if not status:
-        print(f"Could not update status in linked table for record: {recordId}")
+    # addDataToAirTable(newRecordData)
+    # status = updateRecordStatus({"recordId": recordId})
+    # if not status:
+    #     print(f"Could not update status in linked table for record: {recordId}")
 
-    for variant in variantsList:
-        filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
-        removeFile(filePath)
+    # for variant in variantsList:
+    #     filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
+    #     removeFile(filePath)
 
 
 @app.route('/')
@@ -558,8 +590,8 @@ def startProcessing():
 
         if records:
             for record in records:
-                processVideoTask.delay(record, processedVideos, processingSpecs)
-                # processVideoTask(record, processedVideos, processingSpecs)
+                # processVideoTask.delay(record, processedVideos, processingSpecs)
+                processVideoTask(record, processedVideos, processingSpecs)
         firstRequest = False
 
     return jsonify({"status": 200, "message": "Processing started!!"})

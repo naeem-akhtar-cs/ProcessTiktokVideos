@@ -349,14 +349,15 @@ def swapVideoSides(processedVideos, fileName):
         if not ret:
             break
         # TODO Check width of video before swap
-        frame = swapColumns(frame, startColLeft, endColLeft, endColLeft, endColLeft + colsToSwap)
-        frame = swapColumns(frame, startColRight, endColRight, endColRight, endColRight + colsToSwap)
+        frame = swapColumns(frame, startColLeft, endColLeft, endColLeft + 20, endColLeft + colsToSwap + 20)
+        frame = swapColumns(frame, startColRight, endColRight, endColRight + 20, endColRight + colsToSwap + 20)
         out.write(frame)
     cap.release()
     out.release()
     cv2.destroyAllWindows()
     outputVideoUpdated = f"{processedVideos}/{fileName}_cut_audio.mp4"
     mergeAudioWithVideo(inputFilePath, outputFilePath, outputVideoUpdated)
+    return f"{fileName}_cut_audio"
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
@@ -417,7 +418,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
 
     zoomEffect = ""
     if variantId == 5:
-        swapVideoSides(processedVideos, fileName)
+        fileName = swapVideoSides(processedVideos, fileName)
     elif variantId == 3 or variantId ==  4:
         startingPoint = random.randint(0, videoDimensions["duration"] - 5)
         zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"

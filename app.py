@@ -269,8 +269,8 @@ def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, originalAlgoId, pe
             averageColor = getMedianColor(frame, x, y, frameHeight, frameWidth)
         elif algoId == 4:
             averageColor = getWeightedAverageColor(frame, x, y, frameHeight, frameWidth)
-        if algoId == 5:
-            averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
+        # if algoId == 5:
+        #     averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
 
         frame[y, x] = averageColor
     return frame
@@ -419,9 +419,9 @@ def processVideo(processedVideos, fileName, processingSpecs):
         mirrorCommand = "hflip,"
 
     zoomEffect = ""
-    if variantId == 5:
-        fileName = swapVideoSides(processedVideos, fileName)
-    elif variantId == 3 or variantId ==  4:
+    # if variantId == 5:
+    #     fileName = swapVideoSides(processedVideos, fileName)
+    if variantId == 3 or variantId ==  4:
         startingPoint = random.randint(0, videoDimensions["duration"] - 5)
         zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
     elif variantId == 1:

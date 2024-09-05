@@ -1,4 +1,4 @@
-import requests, json, subprocess, os, math, random, uuid, io, time, shutil, sys
+import requests, json, subprocess, os, math, random, uuid, io, time, shutil, sys, threading
 
 import cv2
 import numpy as np
@@ -15,6 +15,8 @@ from googleapiclient.http import MediaIoBaseDownload
 from flask import Flask, request, jsonify, send_file, after_this_request, make_response
 from celery import Celery
 from celery.result import AsyncResult
+
+processingLock = threading.Lock()
 
 app = Flask(__name__)
 
@@ -584,28 +586,34 @@ def processVideoTask(record, processedVideos, processingSpecs):
 
 @app.route('/')
 def startProcessing():
-    processedVideos = "ProcessedVideos"
+    global processingLock
+    if not processingLock.acquire(blocking=False):
+        return jsonify({"status": 429, "message": "Processing is already in progress. Please try again later."})
 
-    checkDir(processedVideos)
-    removeFiles(processedVideos)
+    try:
+        processedVideos = "ProcessedVideos"
 
-    processingSpecs = getProcessingSpecs()
+        checkDir(processedVideos)
+        removeFiles(processedVideos)
 
-    offset = None
-    firstRequest = True
-    while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, "Video Processed")
-        records = data.get("records")
-        offset = data.get("offset")
+        processingSpecs = getProcessingSpecs()
 
-        if records:
-            for record in records:
-                processVideoTask.delay(record, processedVideos, processingSpecs)
-                # processVideoTask(record, processedVideos, processingSpecs)
-        firstRequest = False
+        offset = None
+        firstRequest = True
+        while offset is not None or firstRequest:
+            data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, "Video Processed")
+            records = data.get("records")
+            offset = data.get("offset")
 
-    return jsonify({"status": 200, "message": "Processing started!!"})
+            if records:
+                for record in records:
+                    processVideoTask.delay(record, processedVideos, processingSpecs)
+                    # processVideoTask(record, processedVideos, processingSpecs)
+            firstRequest = False
 
+        return jsonify({"status": 200, "message": "Processing started!!"})
+    finally:
+        processingLock.release()
 
 @celery.task()
 def downloadSingleVideo(processedVideos, data):

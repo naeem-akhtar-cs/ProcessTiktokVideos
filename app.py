@@ -30,6 +30,7 @@ AIRTABLE_LONG_FORMAT_TABLE_ID = os.getenv("AIRTABLE_LONG_FORMAT_TABLE_ID")
 AIRTABLE_LONG_FORMAT_VIEW_ID = os.getenv("AIRTABLE_LONG_FORMAT_VIEW_ID")
 AIRTABLE_SHORT_FORMAT_TABLE_ID = os.getenv("AIRTABLE_SHORT_FORMAT_TABLE_ID")
 SPLIT_VIDEO_LENGTH = os.getenv("SPLIT_VIDEO_LENGTH")
+USER_ACCOUNT_EMAIL = os.getenv("USER_ACCOUNT_EMAIL")
 
 # GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
@@ -179,7 +180,8 @@ def uploadToDrive(filePath, fileName, folderId):
     SERVICE_ACCOUNT_FILE = "creds.json"
     SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
-    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    userAccountEmail = USER_ACCOUNT_EMAIL
+    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES, subject=userAccountEmail)
 
     service = build("drive", "v3", credentials=credentials)
     media = MediaFileUpload(filePath, resumable=True)
@@ -367,9 +369,9 @@ def processVideo(processedVideos, fileName, processingSpecs):
     dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
 
     variantId = processingSpecs["VariantId"]
-    # fileName = deleteRandomPixels(processedVideos, fileName, variantId)
+    fileName = deleteRandomPixels(processedVideos, fileName, variantId)
 
-    fileName = "recUk02J1czaRqI6J_pixels"
+    # fileName = "recUk02J1czaRqI6J_pixels"
 
     metadata = {
         "make": "Apple",
@@ -551,16 +553,16 @@ def processVideoTask(record, processedVideos, processingSpecs):
     for specs in processingSpecs:
         fileName = processVideo(processedVideos, originalFileName, specs)
 
-        # randomNumber = random.randint(1000, 9999)
-        # fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
+        randomNumber = random.randint(1000, 9999)
+        fileUrl = uploadToDrive(f"{processedVideos}/{fileName}_{specs['VariantId']}.mov", f"IMG_{randomNumber}.MOV", variationFolderId)
 
-        # variant = {
-        #     "variantId": specs["VariantId"],
-        #     "fileUrl": fileUrl,
-        #     "fileName": f"IMG_{randomNumber}.MOV",
-        #     "randomNumber": randomNumber
-        # }
-        # variantsList.append(variant)
+        variant = {
+            "variantId": specs["VariantId"],
+            "fileUrl": fileUrl,
+            "fileName": f"IMG_{randomNumber}.MOV",
+            "randomNumber": randomNumber
+        }
+        variantsList.append(variant)
 
     newRecordData = {
         "recordId": recordId,
@@ -570,22 +572,22 @@ def processVideoTask(record, processedVideos, processingSpecs):
         "DriveId": variationFolderId
     }
 
-    # addDataToAirTable(newRecordData)
-    # status = updateRecordStatus({"recordId": recordId})
-    # if not status:
-    #     print(f"Could not update status in linked table for record: {recordId}")
+    addDataToAirTable(newRecordData)
+    status = updateRecordStatus({"recordId": recordId})
+    if not status:
+        print(f"Could not update status in linked table for record: {recordId}")
 
-    # for variant in variantsList:
-    #     filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
-    #     removeFile(filePath)
+    for variant in variantsList:
+        filePath = f"{processedVideos}/{fileName}_{variant['variantId']}.mov"
+        removeFile(filePath)
 
 
 @app.route('/')
 def startProcessing():
     processedVideos = "ProcessedVideos"
 
-    # checkDir(processedVideos)
-    # removeFiles(processedVideos)
+    checkDir(processedVideos)
+    removeFiles(processedVideos)
 
     processingSpecs = getProcessingSpecs()
 
@@ -598,8 +600,8 @@ def startProcessing():
 
         if records:
             for record in records:
-                # processVideoTask.delay(record, processedVideos, processingSpecs)
-                processVideoTask(record, processedVideos, processingSpecs)
+                processVideoTask.delay(record, processedVideos, processingSpecs)
+                # processVideoTask(record, processedVideos, processingSpecs)
         firstRequest = False
 
     return jsonify({"status": 200, "message": "Processing started!!"})
@@ -669,8 +671,9 @@ def downloadVideoAuth(processedVideos, fileId, fileName):
 
         SERVICE_ACCOUNT_FILE = "creds.json"
         SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-        
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
+        userAccountEmail = USER_ACCOUNT_EMAIL
+        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES, subject=userAccountEmail)
         service = build("drive", "v3", credentials=credentials)
 
         request = service.files().get_media(fileId=fileId)

@@ -61,5 +61,4 @@ After setting up the environment and installing all requirements, follow these s
 
 ```docker-compose down && docker-compose build && docker-compose up -d && docker-compose logs -f```
 
-```docker-compose logs```
 ```docker-compose logs -f```

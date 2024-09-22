@@ -66,11 +66,17 @@ app.config.update(
 
 celery = make_celery(app)
 
-def getAirtableRecords(offset, tableId, viewId, filterColumnName):
+def getAirtableRecords(offset, tableId, viewId, filterColumns):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{tableId}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
 
-    params = {"view": viewId, 'filterByFormula': "{" + filterColumnName + "} = False()"}
+    # params = {"view": viewId, 'filterByFormula': "{" + filterColumnName + "} = False()"}
+
+    columnNames = list(filterColumns.keys())
+
+    params = {"view": viewId, 'filterByFormula': "{" + columnNames[0] + "} = " + str(filterColumns[columnNames[0]]) + "()"}
+    if len(columnNames) > 1:
+        params['filterByFormula'] = "AND({" + columnNames[0] + "} = " + str(filterColumns[columnNames[0]]) + "(), {" + columnNames[1] + "} = " + str(filterColumns[columnNames[1]]) + "())"
     if offset is not None:
         params["offset"] = offset
 
@@ -498,15 +504,17 @@ def addDataToAirTable(newRecordData):
         return []
 
 
-def updateRecordStatus(data):
+def updateRecordStatus(data, filterColumns):
     url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}/{data['recordId']}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", 'Content-Type': 'application/json',}
 
-    payload = json.dumps({
-        "fields": {
-            "Video Processed": True
-        }
-    })
+    columnNames = list(filterColumns.keys())
+
+    fields = {}
+    for columnName in columnNames:
+        fields[columnName] = filterColumns[columnName]
+
+    payload = json.dumps({"fields": fields})
 
     try:
         response = requests.request("PATCH", url, headers=headers, data=payload)
@@ -573,7 +581,7 @@ def processVideoTask(record, processedVideos, processingSpecs):
     }
 
     addDataToAirTable(newRecordData)
-    status = updateRecordStatus({"recordId": recordId})
+    status = updateRecordStatus({"recordId": recordId}, {"Video Processed": True, "Processing In Progress": False})
     if not status:
         print(f"Could not update status in linked table for record: {recordId}")
 
@@ -594,12 +602,14 @@ def startProcessing():
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, "Video Processed")
+        data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, {"Video Processed": False,  "Processing In Progress": False})
         records = data.get("records")
+        print(json.dumps(records))
         offset = data.get("offset")
 
         if records:
             for record in records:
+                updateRecordStatus({"recordId": record["id"]}, {"Processing In Progress": True})
                 processVideoTask.delay(record, processedVideos, processingSpecs)
                 # processVideoTask(record, processedVideos, processingSpecs)
         firstRequest = False
@@ -826,9 +836,12 @@ def splitVideos():
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, AIRTABLE_LONG_FORMAT_TABLE_ID, AIRTABLE_LONG_FORMAT_VIEW_ID, "Processed") # Getting data of long format videos
+        data = getAirtableRecords(offset, AIRTABLE_LONG_FORMAT_TABLE_ID, AIRTABLE_LONG_FORMAT_VIEW_ID, {"Processed": False}) # Getting data of long format videos
         records = data.get("records")
         offset = data.get("offset")
+
+        print("Long videos")
+        print(json.dumps(records))
 
         if records:
             for record in records:

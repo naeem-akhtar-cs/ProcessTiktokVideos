@@ -368,6 +368,25 @@ def swapVideoSides(processedVideos, fileName):
     return f"{fileName}_cut_audio"
 
 
+def sharpenVideo(inputFile, outputFile):
+    sharpness = 4
+    if not os.path.exists(inputFile):
+        raise FileNotFoundError(f"Input file not found: {inputFile}")
+
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-i", inputFile,
+        "-filter:v", f"unsharp=5:5:{sharpness}:5:5:0",
+        "-c:a", "copy",
+        outputFile
+    ]
+
+    try:
+        subprocess.run(ffmpeg_cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error occurred while sharpening video: {e}")
+
+
 def processVideo(processedVideos, fileName, processingSpecs):
     locationName, locationIso6709 = random.choice(list(locations.items()))
 
@@ -427,11 +446,19 @@ def processVideo(processedVideos, fileName, processingSpecs):
     zoomEffect = ""
     # if variantId == 5:
     #     fileName = swapVideoSides(processedVideos, fileName)
+
+    # if variantId ==  3:
+    #     sharpenVideo(f"{processedVideos}/{fileName}.mp4", f"{processedVideos}/{fileName}_sharped.mp4")
+    #     removeFile(f"{processedVideos}/{fileName}.mp4")
+    #     os.rename(f"{processedVideos}/{fileName}_sharped.mp4", f"{processedVideos}/{fileName}.mp4")
+    # if variantId ==  4:
+
     if variantId == 3 or variantId ==  4:
         startingPoint = random.randint(0, videoDimensions["duration"] - 5)
         zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
     elif variantId == 1:
         zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
+    # elif variantId != 2  and variantId != 3 and videoDimensions["duration"]  >= 5:
     elif variantId != 2 and videoDimensions["duration"]  >= 5:
         zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
 
@@ -537,7 +564,7 @@ def getProcessingSpecs():
         response = requests.get(url, headers=headers)
         if response.status_code == 429: # Request rate limit case
             time.sleep(30)
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers)
         response.raise_for_status()
 
         data = response.json()
@@ -548,6 +575,7 @@ def getProcessingSpecs():
         return specsList
     except Exception as e:
         print(e)
+        return None
 
 
 @celery.task()
@@ -558,6 +586,7 @@ def processVideoTask(record, processedVideos, processingSpecs):
     originalFileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     variantsList = []
+    # processingSpecs = [processingSpecs[3]]
     for specs in processingSpecs:
         fileName = processVideo(processedVideos, originalFileName, specs)
 
@@ -598,14 +627,23 @@ def startProcessing():
     removeFiles(processedVideos)
 
     processingSpecs = getProcessingSpecs()
+    if processingSpecs is None:
+        print("Could not get processing specs")
+        processingSpecs = getProcessingSpecs()
+        if processingSpecs is None:
+            print("Could not get processing specs for second time")
+            processingSpecs = getProcessingSpecs()
+            if processingSpecs is None:
+                return jsonify({"status": 500, "message": "Error getting processing specs, please try again"})
 
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
         data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, {"Video Processed": False,  "Processing In Progress": False})
         records = data.get("records")
-        print(json.dumps(records))
         offset = data.get("offset")
+        print("Records to Process")
+        print(json.dumps(records))
 
         if records:
             for record in records:

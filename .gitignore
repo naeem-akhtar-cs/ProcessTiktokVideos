@@ -9,3 +9,4 @@ SplitVideos/
 *.logs
 *.json
 .venv
+*.log

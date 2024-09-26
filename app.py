@@ -253,7 +253,6 @@ def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
         outputVideo
     ]
     subprocess.run(ffmpegCommand, check=True)
-    removeFile(f"{processedVideo}")
 
 
 def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, originalAlgoId, percentage=0.01):

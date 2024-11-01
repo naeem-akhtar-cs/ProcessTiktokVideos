@@ -2,6 +2,7 @@ import requests, json, subprocess, os, math, random, uuid, io, time, shutil, sys
 
 import cv2
 import numpy as np
+from math import ceil
 
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
@@ -196,194 +197,79 @@ def uploadToDrive(filePath, fileName, folderId):
     fileUrl = driveDownloadBaseUrl + file.get("id")
     return fileUrl
 
-
-def getVideoBitrate(filePath):
-    cmd = [
-        "ffprobe",
-        "-v", "quiet",
-        "-select_streams", "v:0",
-        "-print_format", "json",
-        "-show_entries", "stream=bit_rate",
-        filePath,
-    ]
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    data = json.loads(result.stdout)
-    return int(data["streams"][0]["bit_rate"])
-
-
-def deleteRandomPixels(folderName, fileName, variantId):
-    inputVideo = f"{folderName}/{fileName}.mp4"
-    tempVideoWithoutAudio = f"{folderName}/{fileName}_no_audio.mp4"
-    outputVideo = f"{folderName}/{fileName}_pixels.mp4"
-
-    cap = cv2.VideoCapture(inputVideo)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    frameWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frameHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-
-    # algoId = random.randint(1, 3)
-    algoId = variantId
-    percentage = 0.01
-
-    out = cv2.VideoWriter(tempVideoWithoutAudio, fourcc, fps, (frameWidth, frameHeight))
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame = deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, algoId, percentage)
-        out.write(frame)
-    cap.release()
-    out.release()
-    mergeAudioWithVideo(inputVideo, tempVideoWithoutAudio, outputVideo)
-    return f"{fileName}_pixels"
-
-
-def mergeAudioWithVideo(originalVideo, processedVideo, outputVideo):
-    ffmpegCommand = [
-        "ffmpeg",
-        "-i", processedVideo,
-        "-i", originalVideo,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-shortest",
-        outputVideo
-    ]
-    subprocess.run(ffmpegCommand, check=True)
-
-
-def deleteRandomPixelsInFrame(frame, frameHeight, frameWidth, originalAlgoId, percentage=0.01):
-    totalPixels = frameHeight * frameWidth
-    numPixelsToDelete = int(totalPixels * percentage)
-
-    for _ in range(numPixelsToDelete):
-        x = random.randint(0, frameWidth - 1)
-        y = random.randint(0, frameHeight - 1)
-
-        if originalAlgoId == 2:
-            algoId = random.choice([1, 3, 4])
-        else:
-            algoId = originalAlgoId
-
-        if algoId == 1:
-            averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
-        elif algoId == 3:
-            averageColor = getMedianColor(frame, x, y, frameHeight, frameWidth)
-        elif algoId == 4:
-            averageColor = getWeightedAverageColor(frame, x, y, frameHeight, frameWidth)
-        # if algoId == 5:
-        #     averageColor = getAverageColor(frame, x, y, frameHeight, frameWidth)
-
-        frame[y, x] = averageColor
-    return frame
-
-
-# Detected on upload - Not working
-def modifyPixelColor(frame, x, y, frameHeight, frameWidth):
-    originalColor = frame[y, x]
-    randomAdjustment = np.random.randint(-10, 11, size=3)
-    modifiedColor = originalColor + randomAdjustment
-    modifiedColor = np.clip(modifiedColor, 0, 255)
-    return modifiedColor
-
-
-def getAverageColor(frame, x, y, frameHeight, frameWidth):
-    xMin = max(0, x - 1)
-    xMax = min(frameWidth - 1, x + 1)
-    yMin = max(0, y - 1)
-    yMax = min(frameHeight - 1, y + 1)
-    neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
-    averageColor = np.mean(neighboringPixels, axis=(0, 1)).astype(int)
-    return averageColor
-
-
-def getMedianColor(frame, x, y, frameHeight, frameWidth):
-    xMin = max(0, x - 1)
-    xMax = min(frameWidth - 1, x + 1)
-    yMin = max(0, y - 1)
-    yMax = min(frameHeight - 1, y + 1)
-    neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
-    medianColor = np.median(neighboringPixels, axis=(0, 1)).astype(int)
-    return medianColor
-
-
-def getWeightedAverageColor(frame, x, y, frameHeight, frameWidth):
-    xMin = max(0, x - 1)
-    xMax = min(frameWidth - 1, x + 1)
-    yMin = max(0, y - 1)
-    yMax = min(frameHeight - 1, y + 1)
-    neighboringPixels = frame[yMin:yMax + 1, xMin:xMax + 1]
-    weights = np.array([
-        [1, 2, 1],
-        [2, 4, 2],
-        [1, 2, 1]
-    ])
-    weights = weights[(yMin - y + 1):(yMax - y + 2), (xMin - x + 1):(xMax - x + 2)]
-    weightedSum = np.tensordot(neighboringPixels, weights, axes=((0, 1), (0, 1)))
-    weightedAverageColor = (weightedSum / np.sum(weights)).astype(int)
-    return weightedAverageColor
-
-
-def swapColumns(frame, startCol1, endCol1, startCol2, endCol2):
-    temp = frame[:, startCol1:endCol1].copy()
-    frame[:, startCol1:endCol1] = frame[:, startCol2:endCol2]
-    frame[:, startCol2:endCol2] = temp
-    return frame
-
-
-def swapVideoSides(processedVideos, fileName):
-    inputFilePath = f"{processedVideos}/{fileName}.mp4"
-    cap = cv2.VideoCapture(inputFilePath)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-
-    outputFilePath = f"{processedVideos}/{fileName}_cut.mp4"
-    out = cv2.VideoWriter(outputFilePath, fourcc, fps, (width, height))
-
-    colsToSwap = 20
-    startColLeft = int(width * 0.15) + colsToSwap
-    endColLeft = startColLeft + colsToSwap
-    startColRight = int(width * 0.85)
-    endColRight = startColRight + colsToSwap
-
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        # TODO Check width of video before swap
-        frame = swapColumns(frame, startColLeft, endColLeft, endColLeft + 20, endColLeft + colsToSwap + 20)
-        frame = swapColumns(frame, startColRight, endColRight, endColRight + 20, endColRight + colsToSwap + 20)
-        out.write(frame)
-    cap.release()
-    out.release()
-    cv2.destroyAllWindows()
-    outputVideoUpdated = f"{processedVideos}/{fileName}_cut_audio.mp4"
-    mergeAudioWithVideo(inputFilePath, outputFilePath, outputVideoUpdated)
-    return f"{fileName}_cut_audio"
-
-
-def sharpenVideo(inputFile, outputFile):
-    sharpness = 4
-    if not os.path.exists(inputFile):
-        raise FileNotFoundError(f"Input file not found: {inputFile}")
-
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-i", inputFile,
-        "-filter:v", f"unsharp=5:5:{sharpness}:5:5:0",
-        "-c:a", "copy",
-        outputFile
-    ]
-
+def addImageToVideo(processedVideos, fileName, processingSpecs):
+    """
+    Add background image to video and rotate it counterclockwise until horizontal.
+    
+    Args:
+        processedVideos (str): Directory path for processed videos
+        fileName (str): Name of the video file without extension
+        processingSpecs (dict): Dictionary containing processing specifications including backgroundImage
+    
+    Returns:
+        bool: True if processing succeeds, False otherwise
+    """
     try:
-        subprocess.run(ffmpeg_cmd, check=True)
+        # Define paths
+        imagePath = f"BackgroundImages/{processingSpecs['backgroundImage']}"
+        videoPath = f"{processedVideos}/{fileName}.mp4"
+        tempPath = f"{processedVideos}/temp_{fileName}.mp4"
+        
+        # Get video dimensions and rotation using ffprobe
+        probe_cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height,rotation',
+            '-of', 'json',
+            videoPath
+        ]
+        
+        probe_output = subprocess.check_output(probe_cmd, universal_newlines=True)
+        video_info = eval(probe_output)
+        
+        # Calculate rotation steps (90 degrees each) needed to make video horizontal
+        initial_rotation = int(video_info.get('streams')[0].get('rotation', '0'))
+        rotation_steps = ceil((360 - initial_rotation) / 90) % 4
+        
+        # FFmpeg command to add background and rotate
+        cmd = [
+            'ffmpeg',
+            '-y',  # Overwrite output file if it exists
+            '-i', videoPath,  # Input video
+            '-i', imagePath,  # Input background image
+            '-filter_complex',
+            f'[1:v]scale=1920:1080,setsar=1[bg];'  # Scale background to 1080p
+            f'[0:v]rotate={rotation_steps}*PI/2:bilinear=1[fg];'  # Rotate video
+            '[bg][fg]overlay=(main_w-overlay_w)/2:(main_h-overlay_h)/2'  # Center overlay
+            ',format=yuv420p',  # Ensure compatibility
+            '-c:v', 'libx264',  # Use H.264 codec
+            '-preset', 'medium',  # Balanced encoding speed/quality
+            '-crf', '23',  # Quality setting (lower = better quality)
+            '-c:a', 'aac',  # Audio codec
+            '-b:a', '128k',  # Audio bitrate
+            tempPath
+        ]
+        
+        # Execute FFmpeg command
+        subprocess.run(cmd, check=True)
+        
+        # Replace original file with processed file
+        os.replace(tempPath, videoPath)
+        
+        return True
+        
     except subprocess.CalledProcessError as e:
-        print(f"Error occurred while sharpening video: {e}")
+        print(f"FFmpeg error: {e}")
+        if os.path.exists(tempPath):
+            os.remove(tempPath)
+        return False
+        
+    except Exception as e:
+        print(f"General error: {e}")
+        if os.path.exists(tempPath):
+            os.remove(tempPath)
+        return False
 
 
 def processVideo(processedVideos, fileName, processingSpecs):
@@ -393,7 +279,7 @@ def processVideo(processedVideos, fileName, processingSpecs):
     dateStr = randomDate.strftime("%Y-%m-%dT%H:%M:%S")
 
     variantId = processingSpecs["VariantId"]
-    fileName = deleteRandomPixels(processedVideos, fileName, variantId)
+    fileName = addImageToVideo(processedVideos, fileName, processingSpecs)
 
     # fileName = "recUk02J1czaRqI6J_pixels"
 
@@ -411,78 +297,8 @@ def processVideo(processedVideos, fileName, processingSpecs):
         "com.apple.quicktime.location.accuracy.horizontal": "6297.954794",
     }
 
-    videoDimensions = getVideoInfo(f"{processedVideos}/{fileName}.mp4")
-    # bitrate = getVideoBitrate(f"{processedVideos}/{fileName}.mp4")
-    # print(bitrate)
-    # bitrateKbps = f"{(bitrate) // 1000}k"
-    # print(bitrateKbps)
 
-    angleRadians = math.radians(processingSpecs["RotationAngle"])
 
-    sinTheta = math.sin(angleRadians)
-    cosTheta = math.cos(angleRadians)
-
-    newWidth = abs(videoDimensions["width"] * cosTheta) + abs(videoDimensions["height"] * sinTheta)
-    newHeight = abs(videoDimensions["width"] * sinTheta) + abs(videoDimensions["height"] * cosTheta)
-
-    updatedDimensions = {"width": newWidth, "height": newHeight}
-
-    heightDiff = updatedDimensions["height"] - videoDimensions["height"]
-    widthDiff = updatedDimensions["width"] - videoDimensions["width"]
-
-    dimensionsDiff = {"width": heightDiff * 2, "height": widthDiff * 2}
-
-    updatedDimensions = {
-        "width": int(videoDimensions["width"] - dimensionsDiff["width"]),
-        "height": int(videoDimensions["height"] - dimensionsDiff["height"]),
-    }
-
-    mirrorCommand = ""
-    mirrorVideo = processingSpecs.get("Mirror")
-    if mirrorVideo is not None and mirrorVideo == True:
-        mirrorCommand = "hflip,"
-
-    zoomEffect = ""
-    # if variantId == 5:
-    #     fileName = swapVideoSides(processedVideos, fileName)
-
-    # if variantId ==  3:
-    #     sharpenVideo(f"{processedVideos}/{fileName}.mp4", f"{processedVideos}/{fileName}_sharped.mp4")
-    #     removeFile(f"{processedVideos}/{fileName}.mp4")
-    #     os.rename(f"{processedVideos}/{fileName}_sharped.mp4", f"{processedVideos}/{fileName}.mp4")
-    # if variantId ==  4:
-
-    if variantId == 3 or variantId ==  4:
-        startingPoint = random.randint(0, videoDimensions["duration"] - 5)
-        zoomEffect = f"zoompan=z='if(gte(time,{startingPoint}),if(lt(time,{startingPoint}+2),1+((time-{startingPoint})/2),if(lt(time,{startingPoint}+3),2,if(lt(time,{startingPoint}+5),2-((time-{startingPoint}-3)/2),1))),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
-    elif variantId == 1:
-        zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
-    # elif variantId != 2  and variantId != 3 and videoDimensions["duration"]  >= 5:
-    elif variantId != 2 and videoDimensions["duration"]  >= 5:
-        zoomEffect = f"zoompan=z='if(lt(time,2),2-(time/2),1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={videoDimensions['width']}x{videoDimensions['height']}:fps=30,"
-
-    ffmpegCommand = [
-        "ffmpeg",
-        "-i", f"{processedVideos}/{fileName}.mp4",
-        "-vf", f'{mirrorCommand}{zoomEffect}rotate={processingSpecs["RotationAngle"]}*PI/180,crop={updatedDimensions["width"]}:{updatedDimensions["height"]},scale={videoDimensions["width"]}:{videoDimensions["height"]}:flags=lanczos,eq=contrast={processingSpecs["Contrast"]}:brightness={processingSpecs["Brightness"]}:saturation={processingSpecs["Saturation"]}:gamma={processingSpecs["Gamma"]}',
-        "-c:v", "libx264",
-        "-preset", "slow",
-        "-crf", "18",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-movflags", "+faststart"
-    ]
-    for key, value in metadata.items():
-        ffmpegCommand.extend(["-metadata", f"{key}={value}"])
-
-    ffmpegCommand.append(f"{processedVideos}/{fileName}_{processingSpecs['VariantId']}.mov")
-
-    try:
-        subprocess.run(ffmpegCommand, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        print("FFmpeg error:", e.stderr)
-        raise
-    removeFile(f"{processedVideos}/{fileName}.mp4")
     return fileName
 
 
@@ -555,36 +371,15 @@ def updateRecordStatus(data, filterColumns):
         return False
 
 
-def getProcessingSpecs():
-    url = f"{baseUrl}/{AIRTABLE_BASE_ID}/{AIRTABLE_SPECS_TABLE_ID}"
-    headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
-
-    try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 429: # Request rate limit case
-            time.sleep(30)
-            response = requests.get(url, headers=headers)
-        response.raise_for_status()
-
-        data = response.json()
-        specsInfo =  data.get("records", [])
-        specsList = []
-        for specs in specsInfo:
-            specsList.append(specs["fields"])
-        return specsList
-    except Exception as e:
-        print(e)
-        return None
-
-
 @celery.task()
 def processVideoTask(record, processedVideos, processingSpecs):
     recordId = record["id"]
     recordFields = record["fields"]
-    variationFolderId = recordFields["drive folder Variations (from Model)"][0]
+    # variationFolderId = recordFields["drive folder Variations (from Model)"][0]
     originalFileName = downloadVideo(recordFields["Google Drive URL"], processedVideos, recordId)
 
     variantsList = []
+    
     # processingSpecs = [processingSpecs[3]]
     for specs in processingSpecs:
         fileName = processVideo(processedVideos, originalFileName, specs)
@@ -625,30 +420,50 @@ def startProcessing():
     checkDir(processedVideos)
     removeFiles(processedVideos)
 
-    processingSpecs = getProcessingSpecs()
-    if processingSpecs is None:
-        print("Could not get processing specs")
-        processingSpecs = getProcessingSpecs()
-        if processingSpecs is None:
-            print("Could not get processing specs for second time")
-            processingSpecs = getProcessingSpecs()
-            if processingSpecs is None:
-                return jsonify({"status": 500, "message": "Error getting processing specs, please try again"})
+    processingSpecs = [
+        {
+            "VariantId": "1",
+            "rotate": "left",
+            "backgroundImage": "1.jpg"
+        },
+        {
+            "VariantId": "2",
+            "rotate": "left",
+            "backgroundImage": "2.jpg"
+        },
+        {
+            "VariantId": "3",
+            "rotate": "right",
+            "backgroundImage": "3.jpg"
+        },
+        {
+            "VariantId": "4",
+            "rotate": "right",
+            "backgroundImage": "4.jpg"
+        }
+    ]
 
     offset = None
     firstRequest = True
     while offset is not None or firstRequest:
-        data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, {"Video Processed": False,  "Processing In Progress": False})
-        records = data.get("records")
-        offset = data.get("offset")
+        # data = getAirtableRecords(offset, AIRTABLE_TABLE_ID, AIRTABLE_VIEW_ID, {"Video Processed": False,  "Processing In Progress": False})
+        # records = data.get("records")
+        # offset = data.get("offset")
         print("Records to Process")
-        print(json.dumps(records))
+        # print(json.dumps(records))
+
+        records = [{
+            "id": "rec123",
+            "fields": {
+                "Google Drive URL": "https://drive.google.com/uc?id=1C-mxgHBdQMkLu8ZrTMIynGk--4lydeom&export=download"
+            }
+        }]
 
         if records:
             for record in records:
-                updateRecordStatus({"recordId": record["id"]}, {"Processing In Progress": True})
-                processVideoTask.delay(record, processedVideos, processingSpecs)
-                # processVideoTask(record, processedVideos, processingSpecs)
+                # updateRecordStatus({"recordId": record["id"]}, {"Processing In Progress": True})
+                # processVideoTask.delay(record, processedVideos, processingSpecs)
+                processVideoTask(record, processedVideos, processingSpecs)
         firstRequest = False
 
     return jsonify({"status": 200, "message": "Processing started!!"})

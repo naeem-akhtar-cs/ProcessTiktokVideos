@@ -10,3 +10,4 @@ SplitVideos/
 *.json
 .venv
 *.log
+SampleVideos/

@@ -59,6 +59,10 @@ For any technical issues or advanced configuration, please consult with the deve
 
 After setting up the environment and installing all requirements, follow these steps to run the application:
 
-```docker-compose down && docker-compose build && docker-compose up -d && docker-compose logs -f```
+`docker-compose down && docker-compose build && docker-compose up -d && docker-compose logs -f`
 
-```docker-compose logs -f```
+`docker-compose logs -f`
+
+## V2
+
+Video URL: https://drive.google.com/uc?id=1C-mxgHBdQMkLu8ZrTMIynGk--4lydeom&export=download
